@@ -2,7 +2,7 @@ name: PREPROD - Déploiement FTP
 
 on:
   push:
-    branches: [main]
+    branches: [develop]
   workflow_dispatch:
 
 concurrency:
