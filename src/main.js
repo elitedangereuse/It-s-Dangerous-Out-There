@@ -467,7 +467,11 @@ document.addEventListener('click', (e) => {
       break;
     case 'skip': return finishCinematic();
     case 'new': {
-      history.replaceState(null, '', location.pathname);
+      try {
+        history.replaceState(null, '', location.pathname);
+      } catch {
+        // Cadre sandboxé : l'URL ne peut pas être modifiée, sans conséquence.
+      }
       return newGame(Math.floor(Math.random() * 1e9));
     }
     case 'retry': return newGame(state.seed);
