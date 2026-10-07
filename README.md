@@ -53,10 +53,10 @@ npm test   # tests de la logique de jeu (node:test), dont 60 parties simulées
 | `src/galaxy.js` | Génération procédurale (régions, systèmes, corps) |
 | `src/events.js` | Événements narratifs à choix |
 | `src/data.js` | Classes stellaires, corps, matériaux, recettes, destinations |
-| `src/render.js`, `src/sprites.js` | Rendu canvas 320×180 en pixel art |
-| `src/pixelplanets.js` | Planètes et étoiles pixel art animées (WebGL) |
-| `src/backgrounds.js` | Générateur de 500 fonds en parallaxe (250 d'espace, 250 environnements planétaires) |
-| `assets/skies/` | Ciels nuageux en calques de parallaxe (surfaces à atmosphère, écran titre) |
+| `src/render.js` | Rendu canvas 320×180 des scènes (titre, système, saut, atterrissage, surface, fin) |
+| `src/sprites.js` | Vaisseau (inspiré du Mandalay) et commandant en combinaison, en pixel art |
+| `src/pixelplanets.js` | Planètes, étoiles et astéroïdes pixel art animés (WebGL) |
+| `src/scenery.js` | Décors : 250 nébuleuses d'espace et 250 panoramas planétaires, en parallaxe |
 | `galerie.html` | Galerie pour parcourir les fonds générés |
 | `src/main.js` | Interface et boucle de jeu |
 
@@ -64,8 +64,7 @@ Le document de design est dans [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md).
 
 ## Crédits
 
-- Planètes : portage WebGL des shaders [PixelPlanets](https://github.com/Deep-Fold/PixelPlanets) de Deep-Fold (licence MIT).
-- Ciels nuageux : packs gratuits de fonds pixel art fournis par Ben (`assets/skies/`), qui ont aussi servi de modèle au générateur de fonds.
+- Planètes, étoiles et astéroïdes : portage WebGL des shaders [PixelPlanets](https://github.com/Deep-Fold/PixelPlanets) de Deep-Fold (licence MIT).
 
 ---
 

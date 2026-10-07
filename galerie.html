@@ -3,20 +3,32 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080a2a">
   <title>Galerie des fonds · It's Dangerous Out There</title>
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&display=swap" rel="stylesheet">
   <style>
-    body { margin: 0; background: #04050a; color: #f2d9b8; font-family: 'VT323', monospace; font-size: 20px; }
-    header { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; padding: 12px 16px; border-bottom: 1px solid #2a2418; position: sticky; top: 0; background: #0a0d16; z-index: 2; }
-    h1 { font-family: 'Press Start 2P', monospace; font-size: 11px; color: #ff8c1a; margin: 0; }
-    button, select { font: inherit; color: #ff8c1a; background: rgba(255,140,26,.06); border: 1px solid #a85a12; padding: 2px 10px; cursor: pointer; }
-    button[aria-pressed=true] { background: #ff8c1a; color: #120a02; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; padding: 16px; }
-    figure { margin: 0; border: 1px solid #2a2418; background: #000; }
-    figure canvas { display: block; width: 100%; aspect-ratio: 16/9; image-rendering: pixelated; }
-    figcaption { padding: 2px 8px; color: #8a7a66; font-size: 0.85em; }
-    figure.live { border-color: #ff8c1a; }
-    a { color: #ff8c1a; }
+    :root { color-scheme: dark; --ink: #ecebff; --muted: #a4a7d8; --line: #3b4199; --accent: #ffb054; --violet: #a993ff; --cyan: #74dcff;
+      --step2: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px)); }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100dvh; color: var(--ink); font-family: 'Pixelify Sans', monospace; font-size: 17px;
+      background: radial-gradient(ellipse 70% 55% at 12% -5%, rgba(124, 92, 255, 0.24), transparent 65%), radial-gradient(ellipse 60% 55% at 105% 105%, rgba(40, 170, 255, 0.16), transparent 65%), linear-gradient(180deg, #080a2a, #04051a) fixed; }
+    header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding: 12px 16px; position: sticky; top: 0; z-index: 2;
+      background: rgba(12, 14, 40, 0.82); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 2px 0 rgba(59, 65, 153, 0.6); }
+    h1 { font-size: 20px; font-weight: 700; margin: 0; background: linear-gradient(180deg, #ffe1a8, #ffab52 60%, #ff7fa8); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    button, select { font: inherit; color: #dfe1ff; background: rgba(36, 40, 96, 0.9); border: 0; padding: 4px 12px; cursor: pointer; clip-path: var(--step2); box-shadow: inset 0 0 0 2px var(--line); transition: background 0.16s, color 0.16s; }
+    button:hover, select:hover { background: rgba(52, 58, 136, 0.95); color: #fff; }
+    button[aria-pressed=true] { background: #f0943c; color: #2b1405; font-weight: 600; box-shadow: inset 0 0 0 2px #ffd18a; }
+    label { color: var(--muted); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; padding: 16px; }
+    figure { margin: 0; background: rgba(17, 19, 48, 0.74); padding: 4px; clip-path: var(--step2); box-shadow: inset 0 0 0 2px var(--line); transition: transform 0.2s, box-shadow 0.2s; }
+    figure canvas { display: block; width: 100%; aspect-ratio: 16/9; image-rendering: pixelated; background: #000; }
+    figcaption { padding: 4px 6px 2px; color: var(--muted); font-size: 0.85em; }
+    figure.live { box-shadow: inset 0 0 0 2px var(--accent); transform: translateY(-2px); }
+    a { color: var(--cyan); text-underline-offset: 3px; }
+    .hint { color: var(--muted); }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
 </head>
 <body>
@@ -24,28 +36,32 @@
     <h1>Galerie des fonds</h1>
     <button data-kind="space" aria-pressed="true">Espace (250)</button>
     <button data-kind="planet" aria-pressed="false">Planètes (250)</button>
-    <label>Sol <select id="type"><option>rocky</option><option>icy</option><option>hmc</option><option>metal</option></select></label>
+    <label>Sol <select id="type"><option value="rocky">Rocheux</option><option value="icy">Glacé</option><option value="hmc">Forte teneur en métaux</option><option value="metal">Riche en métaux</option></select></label>
     <button id="prev">←</button><span id="page"></span><button id="next">→</button>
-    <span style="color:#8a7a66">Survolez un fond pour l'animer.</span>
+    <span class="hint">Survolez un fond pour l'animer.</span>
     <a href="./">Retour au jeu</a>
   </header>
   <div class="grid" id="grid"></div>
   <script type="module">
-    import { spaceBackground, planetBackground, drawLayers, SPACE_COUNT, PLANET_COUNT, LW } from './src/backgrounds.js';
+    import { createRenderer } from './src/render.js';
+    import { SPACE_COUNT, PLANET_COUNT, THEMES } from './src/scenery.js';
     const PER = 12;
+    const THEME_NAMES = Object.keys(THEMES);
+    const LABEL = { emeraude: 'émeraude', crepuscule: 'crépuscule', poussiere: 'poussière' };
+    const L = (k) => LABEL[k] || k;
     let kind = 'space', page = 0, live = null;
     const grid = document.getElementById('grid');
+    // Un seul moteur de rendu (un seul contexte WebGL) : chaque aperçu y est dessiné puis recopié.
+    const stage = document.createElement('canvas');
+    stage.width = 320; stage.height = 180;
+    const renderer = createRenderer(stage);
     const count = () => (kind === 'space' ? SPACE_COUNT : PLANET_COUNT);
     function paint(fig, t) {
+      const R = renderer.preview(fig.kind, fig.id, t, { type: fig.type, theme: THEME_NAMES[fig.id % THEME_NAMES.length] });
       const ctx = fig.canvas.getContext('2d');
-      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 320, 180);
-      const bg = fig.bg;
-      if (bg.kind === 'space') drawLayers(ctx, bg.layers, { t });
-      else {
-        drawLayers(ctx, bg.sky, { t });
-        drawLayers(ctx, bg.ground, { t, camX: t * 6 });
-        ctx.fillStyle = `rgb(${bg.horizon.join(',')})`;
-      }
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(stage, 0, 0);
+      return R;
     }
     function render() {
       grid.innerHTML = '';
@@ -61,14 +77,17 @@
         const fig = document.createElement('figure');
         fig.canvas = document.createElement('canvas');
         fig.canvas.width = 320; fig.canvas.height = 180;
-        fig.bg = kind === 'space' ? spaceBackground(id) : planetBackground(id, type);
-        const R = fig.bg.recipe;
+        Object.assign(fig, { kind, id, type });
+        // Deux passes : Pixel Planets a besoin d'une première image pour ses sprites.
+        paint(fig, 0);
+        const R = paint(fig, 0.01);
         const cap = document.createElement('figcaption');
-        cap.textContent = kind === 'space' ? `#${id} · ${R.style}${R.feature ? ' · ' + R.feature : ''}` : `#${id} · ${R.atmo ? 'atmosphère' : 'sans atmosphère'} · ${R.ridge}`;
+        cap.textContent = kind === 'space'
+          ? `#${id} · nébuleuse ${L(R.theme)}${R.accent ? ' et ' + L(R.accent) : ''}${R.deco ? ' · planète' : ''}${R.asteroids ? ' · astéroïdes' : ''}`
+          : `#${id} · ${R.airless ? 'sans atmosphère' : 'ciel ' + L(R.mood)} · ${R.ridge}`;
         fig.append(fig.canvas, cap);
         fig.addEventListener('mouseenter', () => { live = fig; fig.classList.add('live'); });
         fig.addEventListener('mouseleave', () => { live = null; fig.classList.remove('live'); });
-        paint(fig, 0);
         grid.append(fig);
         setTimeout(step, 0);
       };

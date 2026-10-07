@@ -733,6 +733,45 @@ void main() {
   gl_FragColor = vec4(col.rgb, a * col.a);
 }`,
   },
+  // Asteroids/Asteroids.gdshader
+  asteroid: {
+    defs: { RAND_MUL: '15.5453' },
+    src: `
+float rockNoise(vec2 uv) {
+  float uv_y = floor(uv.y);
+  uv.x += uv_y * 0.31;
+  vec2 f = fract(uv);
+  float h = rand(vec2(floor(uv.x), floor(uv_y)));
+  float m = length(f - 0.25 - (h * 0.5));
+  float r = h * 0.25;
+  return ss(r - 0.10 * r, r, m);
+}
+float crater(vec2 uv) {
+  float c = 1.0;
+  for (int i = 0; i < 2; i++) c *= rockNoise((uv * size) + (float(i + 1) + 10.0));
+  return 1.0 - c;
+}
+void main() {
+  vec2 UV = getUV();
+  vec2 uv = floor(UV * pixels) / pixels;
+  bool dith = dither(uv, UV);
+  float d = distance(uv, vec2(0.5));
+  uv = rotate(uv, rotation);
+  float n = fbm(uv * size);
+  float n2 = fbm(uv * size + (rotate(light_origin, rotation) - 0.5) * 0.5);
+  float n_step = step(0.2, n - d);
+  float n2_step = step(0.2, n2 - d);
+  float noise_rel = (n2_step + n2) - (n_step + n);
+  float c1 = crater(uv);
+  float c2 = crater(uv + (light_origin - 0.5) * 0.03);
+  vec4 col = colors[1];
+  if (noise_rel < -0.06 || (noise_rel < -0.04 && (dith || !should_dither))) col = colors[0];
+  if (noise_rel > 0.05 || (noise_rel > 0.03 && (dith || !should_dither))) col = colors[2];
+  if (c1 > 0.4) col = colors[1];
+  if (c2 < c1) col = colors[2];
+  gl_FragColor = vec4(col.rgb, n_step * col.a);
+}`,
+  },
 };
 
 const INT_UNIFORMS = new Set(['OCTAVES', 'n_colors']);
@@ -883,6 +922,11 @@ const BUILDERS = {
       // Le diamètre demandé est celui de l'horizon : la couche centrale fait 2× (rayon 0.247).
       layer('blackHole', { radius: 0.247, light_width: 0.028, colors: palette(c.hole) }, { rel: 2 }),
       layer('bhRing', { ...common(o), rotation: o.rotation + 0.7, light_origin: [0.607, 0.444], time_speed: 0.2, disk_width: 0.065, ring_perspective: 14, n_colors: 5, size: 6.598, OCTAVES: 3, colors: palette(c.disk) }, { rel: 6, k: 0.004, fixedTime: true }),
+    ];
+  },
+  asteroid(o) {
+    return [
+      layer('asteroid', { ...common(o), light_origin: o.light || [0.3, 0.3], time_speed: 0, size: o.size ?? 5.294, OCTAVES: 2, colors: palette(o.colors.rock) }),
     ];
   },
   galaxy(o) {

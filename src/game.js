@@ -26,7 +26,7 @@ export function createGame(seed = Math.floor(Math.random() * 1e9)) {
     distanceTravelled: 0,
     phase: 'system',
     ship: {
-      name: 'Asp Explorer',
+      name: 'Mandalay',
       fuel: 24,
       fuelMax: 24,
       hull: 100,
