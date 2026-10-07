@@ -295,6 +295,12 @@ function navCands() {
 function ensureNavSel() {
   const cands = navCands();
   if (!cands.find((x) => x.c.id === view.navSel)) view.navSel = (cands.find((x) => x.check.ok) || cands[0])?.c.id ?? null;
+  const sel = cands.find((x) => x.c.id === view.navSel);
+  if (sel && sel.c.id !== view.warmed) {
+    view.warmed = sel.c.id;
+    const idle = window.requestIdleCallback || ((f) => setTimeout(f, 50));
+    idle(() => renderer.warm(sel.c));
+  }
   return cands;
 }
 
@@ -662,7 +668,8 @@ function titleCard() {
       <li>Écopez les étoiles KGBFOAM ${kbd('E')} pour refaire le plein.</li>
       <li>Posez-vous ${kbd('L')} pour récolter des matériaux, puis réparez et améliorez ${kbd('Y')}.</li>
       <li>Ouvrez la navigation ${kbd('N')}, choisissez une étoile, sautez ${kbd('Entrée')}.</li>
-    </ul></details></div>`;
+    </ul></details>
+    <p class="muted" style="margin:12px 0 0"><a href="galerie.html" style="color:var(--orange)">Galerie des 500 fonds</a></p></div>`;
 }
 
 // ---------- Mise à jour ----------

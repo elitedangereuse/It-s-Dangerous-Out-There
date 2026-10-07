@@ -2,6 +2,7 @@
 import { STAR_CLASSES, BODY_TYPES } from './data.js';
 import { SHIP, SHIP_GEAR, SHIP_PALETTE, ASTRO_FRAMES, ASTRO_PALETTE, drawSprite, drawText } from './sprites.js';
 import { Rng, hashMix } from './rng.js';
+import { spaceBackgroundFor, planetBackgroundFor, drawLayers } from './backgrounds.js';
 import { createPixelPlanets, specForBody, specForStar, specForDestination } from './pixelplanets.js';
 
 export const W = 320;
@@ -87,6 +88,8 @@ export function bodyAtmosphere(body) {
   if (!sets) return null;
   const seed = body.seed % 100000;
   if (hash2(seed, 7, 3) > 0.45) return null;
+  // Un tiers des mondes à atmosphère reprend un ciel des packs, les autres un ciel généré.
+  if (hash2(seed, 11, 2) > 0.35) return 'generated';
   return sets[Math.floor(hash2(seed, 9, 5) * sets.length)];
 }
 
@@ -138,6 +141,7 @@ export function createRenderer(canvas) {
   const cache = new Map();
   let currentStar = 'G';
   let currentBodies = [];
+  let currentSystem = null;
   const starRng = new Rng(99);
   const stars = Array.from({ length: 140 }, () => ({
     x: starRng.range(0, W),
@@ -192,6 +196,14 @@ export function createRenderer(canvas) {
       cache.set(key, renderPlanet(r, body));
     }
     return cache.get(key);
+  }
+
+  // Fond d'espace du système courant (généré, en parallaxe).
+  function spaceBg(t, { camX = 0, speed = 1 } = {}) {
+    const sys = currentSystem;
+    if (!sys) return starfield(t, 1);
+    const bg = spaceBackgroundFor(hashMix(sys.name, sys.star), sys.regions?.[0] || null);
+    drawLayers(ctx, bg.layers, { t: t * speed, camX });
   }
 
   function starfield(t, drift = 2, tint = '#ffffff') {
@@ -304,7 +316,10 @@ export function createRenderer(canvas) {
   function systemScene(view, t) {
     const { state } = view;
     const sys = state.system;
-    starfield(t, 1.5);
+    spaceBg(t);
+    // Voile sombre : le décor reste discret pour que les corps restent lisibles.
+    ctx.fillStyle = 'rgba(3, 4, 10, 0.5)';
+    ctx.fillRect(0, 0, W, H);
     const star = STAR_CLASSES[sys.star];
     const starX = star.radius > 20 ? 4 : 24;
     const starY = 90;
@@ -405,6 +420,10 @@ export function createRenderer(canvas) {
     const k = Math.min(1, view.sceneTime / JUMP_DURATION);
     ctx.fillStyle = '#02030a';
     ctx.fillRect(0, 0, W, H);
+    // Le décor du système d'arrivée défile à toute vitesse derrière le tunnel.
+    ctx.globalAlpha = 0.2 + 0.6 * k * k;
+    spaceBg(t, { camX: view.sceneTime * 900 * (1 - k * 0.7) });
+    ctx.globalAlpha = 1;
     const target = STAR_CLASSES[view.jumpStar || 'G'];
     const rng = new Rng(7);
     for (let i = 0; i < 160; i++) {
@@ -450,8 +469,6 @@ export function createRenderer(canvas) {
     off.height = H;
     const o = off.getContext('2d');
     for (let x = 0; x < W; x++) {
-      o.fillStyle = pal[0];
-      o.fillRect(x, far[x], 1, H - far[x]);
       o.fillStyle = pal[1];
       o.fillRect(x, near[x], 1, H - near[x]);
       o.fillStyle = pal[2];
@@ -468,23 +485,32 @@ export function createRenderer(canvas) {
     return t;
   }
 
-  function surfaceBackdrop(body, t) {
-    // Étoile du système, basse sur l'horizon.
+  // Décor de surface : ciel (pack fourni ou généré), crêtes en parallaxe, puis le sol proche.
+  // cam.y > 0 décale les plans vers le bas (pendant la descente, le sol « monte » vers le vaisseau).
+  function surfaceBackdrop(body, t, cam = { x: 0, y: 0 }) {
     const star = STAR_CLASSES[currentStar];
-    const sun = () => disc(ctx, 270, 34, Math.max(2, Math.round(star.radius / 8)), star.color === '#000000' ? '#ff9a3a' : star.color);
-    const sky = bodyAtmosphere(body);
-    if (sky && skyReady(sky)) {
-      drawSky(sky, t, { top: 70, speed: 0.6, between: sun });
+    const sunY = 34 + Math.round(cam.y * 0.05);
+    const sun = () => disc(ctx, 270, sunY, Math.max(2, Math.round(star.radius / 8)), star.color === '#000000' ? '#ff9a3a' : star.color);
+    const atmo = bodyAtmosphere(body);
+    const bg = planetBackgroundFor(body, !!atmo);
+    ctx.fillStyle = `rgb(${bg.horizon.join(',')})`;
+    ctx.fillRect(0, 0, W, H);
+    if (atmo && atmo !== 'generated' && skyReady(atmo)) {
+      drawSky(atmo, t, { top: Math.round(144 - Math.min(60, cam.y * 0.5)), speed: 0.6, between: sun });
     } else {
-      starfield(t, 0.2);
+      drawLayers(ctx, bg.sky, { t, camX: cam.x, camY: cam.y, to: 1 });
       sun();
-      // Un voisin du système se lève au-dessus de l'horizon.
-      const others = currentBodies.filter((b) => b.id !== body.id);
-      const big = others.sort((a, b) => b.size - a.size)[0];
-      if (big) drawBody(big, 70, 70, big.size >= 12 ? 22 : 12, t, { key: `${big.id}-sky`, fps: 8 });
+      if (!atmo) {
+        // Un voisin du système se lève au-dessus de l'horizon.
+        const others = currentBodies.filter((b) => b.id !== body.id);
+        const big = others.sort((a, b) => b.size - a.size)[0];
+        if (big) drawBody(big, 70, 70 + Math.round(cam.y * 0.1), big.size >= 12 ? 22 : 12, t, { key: `${big.id}-sky`, fps: 8 });
+      }
+      drawLayers(ctx, bg.sky, { t, camX: cam.x, camY: cam.y, from: 1 });
     }
+    drawLayers(ctx, bg.ground, { t, camX: cam.x, camY: cam.y });
     const ter = terrain(body);
-    ctx.drawImage(ter.canvas, 0, 0);
+    ctx.drawImage(ter.canvas, 0, Math.round(cam.y));
     return ter;
   }
 
@@ -558,8 +584,8 @@ export function createRenderer(canvas) {
     const body = view.body;
     const st = view.sceneTime;
     if (st < 2.2) {
-      // Orbite : courbe de la planète en bas de l'écran.
-      starfield(t, 4);
+      // Orbite : courbe de la planète en bas de l'écran, le fond défile vite.
+      spaceBg(t, { camX: st * 120 });
       const R = 260;
       if (!drawBody(body, W / 2, 120 - Math.round(st * 8) + R, R, t, { key: `${body.id}-big`, fps: 6 })) {
         const img = planet({ ...body, id: `${body.id}-big` }, R);
@@ -569,7 +595,10 @@ export function createRenderer(canvas) {
       drawShip(-30 + k * 260, 50 + k * 30, t, { thrust: 1 });
       return;
     }
-    const ter = surfaceBackdrop(body, t);
+    const kd = Math.min(1, (st - 2.2) / 2.2);
+    const easeD = 1 - (1 - kd) * (1 - kd);
+    // Caméra : on arrive de haut et de la gauche, les plans proches défilent plus vite.
+    const ter = surfaceBackdrop(body, t, { x: -(1 - easeD) * 260, y: (1 - easeD) * 110 });
     const groundY = ter.near[SHIP_LAND_X + 26];
     const shipH = SHIP.length * 2;
     const landedY = groundY - shipH - 4;
@@ -582,7 +611,7 @@ export function createRenderer(canvas) {
       drawShip(x, y, t, { scale: 2, thrust: 1, gear: k > 0.7 });
       // Traversée de la couche nuageuse.
       const sky = bodyAtmosphere(body);
-      if (sky && skyReady(sky) && k < 0.75) {
+      if (sky && sky !== 'generated' && skyReady(sky) && k < 0.75) {
         const layers = skies[sky];
         const img = layers[layers.length - 1];
         const kk = k / 0.75;
@@ -681,11 +710,11 @@ export function createRenderer(canvas) {
 
   function takeoffScene(view, t) {
     const body = view.body;
-    const ter = surfaceBackdrop(body, t);
-    const groundY = ter.near[SHIP_LAND_X + 26];
+    const k = view.sceneTime / TAKEOFF_DURATION;
+    const ter = surfaceBackdrop(body, t, { x: k * k * 160, y: k * k * 120 });
+    const groundY = ter.near[SHIP_LAND_X + 26] - k * k * 120;
     const shipH = SHIP.length * 2;
     const landedY = groundY - shipH - 4;
-    const k = view.sceneTime / TAKEOFF_DURATION;
     const y = landedY - k * k * 220;
     const x = SHIP_LAND_X + k * k * 120;
     drawShip(x, y, t, { scale: 2, thrust: 1, gear: k < 0.25 });
@@ -720,7 +749,7 @@ export function createRenderer(canvas) {
   }
 
   function endScene(view, t) {
-    starfield(t, 0.5);
+    spaceBg(t, { speed: 0.5 });
     const victory = view.state.phase === 'victory';
     const gal = victory && ppSprite('dest', specOf('dest', specForDestination), 121, t, 12);
     if (gal) ctx.drawImage(gal.canvas, 200 - 60 - gal.off, 80 - 60 - gal.off);
@@ -751,6 +780,7 @@ export function createRenderer(canvas) {
       ctx.imageSmoothingEnabled = false;
       currentStar = view.state?.system?.star || 'G';
       currentBodies = view.state?.system?.bodies || [];
+      currentSystem = view.state?.system || null;
       switch (view.scene) {
         case 'jump': jumpScene(view, t); break;
         case 'landing': landingScene(view, t); break;
@@ -760,6 +790,10 @@ export function createRenderer(canvas) {
         case 'title': titleScene(view, t); break;
         default: systemScene(view, t);
       }
+    },
+    // Prépare à l'avance le fond d'un système (évite un à-coup au moment du saut).
+    warm(sys) {
+      spaceBackgroundFor(hashMix(sys.name, sys.star), sys.regions?.[0] || null);
     },
     // Renvoie le corps sous un point du canvas (coordonnées internes).
     pick(view, x, y) {
