@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Galerie des fonds · It's Dangerous Out There</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; background: #04050a; color: #f2d9b8; font-family: 'VT323', monospace; font-size: 20px; }
+    header { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; padding: 12px 16px; border-bottom: 1px solid #2a2418; position: sticky; top: 0; background: #0a0d16; z-index: 2; }
+    h1 { font-family: 'Press Start 2P', monospace; font-size: 11px; color: #ff8c1a; margin: 0; }
+    button, select { font: inherit; color: #ff8c1a; background: rgba(255,140,26,.06); border: 1px solid #a85a12; padding: 2px 10px; cursor: pointer; }
+    button[aria-pressed=true] { background: #ff8c1a; color: #120a02; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; padding: 16px; }
+    figure { margin: 0; border: 1px solid #2a2418; background: #000; }
+    figure canvas { display: block; width: 100%; aspect-ratio: 16/9; image-rendering: pixelated; }
+    figcaption { padding: 2px 8px; color: #8a7a66; font-size: 0.85em; }
+    figure.live { border-color: #ff8c1a; }
+    a { color: #ff8c1a; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Galerie des fonds</h1>
+    <button data-kind="space" aria-pressed="true">Espace (250)</button>
+    <button data-kind="planet" aria-pressed="false">Planètes (250)</button>
+    <label>Sol <select id="type"><option>rocky</option><option>icy</option><option>hmc</option><option>metal</option></select></label>
+    <button id="prev">←</button><span id="page"></span><button id="next">→</button>
+    <span style="color:#8a7a66">Survolez un fond pour l'animer.</span>
+    <a href="./">Retour au jeu</a>
+  </header>
+  <div class="grid" id="grid"></div>
+  <script type="module">
+    import { spaceBackground, planetBackground, drawLayers, SPACE_COUNT, PLANET_COUNT, LW } from './src/backgrounds.js';
+    const PER = 12;
+    let kind = 'space', page = 0, live = null;
+    const grid = document.getElementById('grid');
+    const count = () => (kind === 'space' ? SPACE_COUNT : PLANET_COUNT);
+    function paint(fig, t) {
+      const ctx = fig.canvas.getContext('2d');
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 320, 180);
+      const bg = fig.bg;
+      if (bg.kind === 'space') drawLayers(ctx, bg.layers, { t });
+      else {
+        drawLayers(ctx, bg.sky, { t });
+        drawLayers(ctx, bg.ground, { t, camX: t * 6 });
+        ctx.fillStyle = `rgb(${bg.horizon.join(',')})`;
+      }
+    }
+    function render() {
+      grid.innerHTML = '';
+      const pages = Math.ceil(count() / PER);
+      document.getElementById('page').textContent = `page ${page + 1} / ${pages}`;
+      const type = document.getElementById('type').value;
+      const ids = [];
+      for (let i = page * PER; i < Math.min(count(), (page + 1) * PER); i++) ids.push(i);
+      let k = 0;
+      const step = () => {
+        if (k >= ids.length) return;
+        const id = ids[k++];
+        const fig = document.createElement('figure');
+        fig.canvas = document.createElement('canvas');
+        fig.canvas.width = 320; fig.canvas.height = 180;
+        fig.bg = kind === 'space' ? spaceBackground(id) : planetBackground(id, type);
+        const R = fig.bg.recipe;
+        const cap = document.createElement('figcaption');
+        cap.textContent = kind === 'space' ? `#${id} · ${R.style}${R.feature ? ' · ' + R.feature : ''}` : `#${id} · ${R.atmo ? 'atmosphère' : 'sans atmosphère'} · ${R.ridge}`;
+        fig.append(fig.canvas, cap);
+        fig.addEventListener('mouseenter', () => { live = fig; fig.classList.add('live'); });
+        fig.addEventListener('mouseleave', () => { live = null; fig.classList.remove('live'); });
+        paint(fig, 0);
+        grid.append(fig);
+        setTimeout(step, 0);
+      };
+      step();
+    }
+    function loop(now) { if (live) paint(live, now / 1000); requestAnimationFrame(loop); }
+    requestAnimationFrame(loop);
+    for (const b of document.querySelectorAll('[data-kind]')) b.onclick = () => { kind = b.dataset.kind; page = 0; for (const x of document.querySelectorAll('[data-kind]')) x.setAttribute('aria-pressed', String(x === b)); render(); };
+    document.getElementById('prev').onclick = () => { page = (page - 1 + Math.ceil(count() / PER)) % Math.ceil(count() / PER); render(); };
+    document.getElementById('next').onclick = () => { page = (page + 1) % Math.ceil(count() / PER); render(); };
+    document.getElementById('type').onchange = render;
+    render();
+  </script>
+</body>
+</html>

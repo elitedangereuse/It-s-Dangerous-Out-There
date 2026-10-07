@@ -24,14 +24,22 @@ Ajoutez `?seed=1234` à l'URL pour rejouer une galaxie précise.
 
 ### Commandes
 
-- Cliquez sur un corps (à l'écran ou dans la liste) pour le sélectionner.
-- **Scan automatique** : révèle tous les corps rapidement, avec peu de détails.
-- **Scan manuel** : détaille un corps (matériaux, signaux, anomalies).
-- **Mise en orbite et atterrissage** sur les corps atterrissables, puis actions de surface.
-- **Écoper** l'étoile (classes KGBFOAM) pour refaire le plein.
-- **Synthèse** : réparer, fabriquer, améliorer avec vos matériaux.
-- **Carte de navigation** : choisir le prochain saut.
-- Espace ou clic : passer une cinématique.
+Toutes les actions sont dans la barre sous l'écran, chacune avec son raccourci.
+
+| Touche | Action |
+|---|---|
+| clic, `←` `→`, `1`–`9` | Sélectionner un corps du système |
+| `A` | Scan automatique |
+| `M` | Scan détaillé du corps sélectionné |
+| `L` | Atterrir sur le corps sélectionné |
+| `E` | Écoper l'étoile (classes KGBFOAM) |
+| `B` | Traverser le jet d'une étoile à neutrons ou naine blanche |
+| `Y` | Synthèse (réparer, fabriquer, améliorer) |
+| `N` | Carte de navigation, puis `↑` `↓` et `Entrée` pour sauter |
+| `1`–`9`, `D` | En surface : actions, puis décoller |
+| `V`, `J` | Onglets Vaisseau et Journal |
+| `Échap` | Retour |
+| `Espace` | Passer une cinématique |
 
 ## Développement
 
@@ -46,9 +54,18 @@ npm test   # tests de la logique de jeu (node:test), dont 60 parties simulées
 | `src/events.js` | Événements narratifs à choix |
 | `src/data.js` | Classes stellaires, corps, matériaux, recettes, destinations |
 | `src/render.js`, `src/sprites.js` | Rendu canvas 320×180 en pixel art |
+| `src/pixelplanets.js` | Planètes et étoiles pixel art animées (WebGL) |
+| `src/backgrounds.js` | Générateur de 500 fonds en parallaxe (250 d'espace, 250 environnements planétaires) |
+| `assets/skies/` | Ciels nuageux en calques de parallaxe (surfaces à atmosphère, écran titre) |
+| `galerie.html` | Galerie pour parcourir les fonds générés |
 | `src/main.js` | Interface et boucle de jeu |
 
 Le document de design est dans [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md).
+
+## Crédits
+
+- Planètes : portage WebGL des shaders [PixelPlanets](https://github.com/Deep-Fold/PixelPlanets) de Deep-Fold (licence MIT).
+- Ciels nuageux : packs gratuits de fonds pixel art fournis par Ben (`assets/skies/`), qui ont aussi servi de modèle au générateur de fonds.
 
 ---
 
