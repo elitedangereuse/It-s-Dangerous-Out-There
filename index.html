@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>It's Dangerous Out There</title>
+  <meta name="description" content="Roguelite d'exploration spatiale en pixel art dans l'univers d'Elite Dangerous.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>It's Dangerous Out There</h1>
+    <div id="route" class="route"></div>
+  </header>
+
+  <main class="layout">
+    <section class="viewport-wrap">
+      <canvas id="screen" width="320" height="180" aria-label="Vue du vaisseau"></canvas>
+      <div id="overlay" class="overlay" hidden></div>
+    </section>
+
+    <aside id="hud" class="hud panel"></aside>
+
+    <section id="panel" class="context panel"></section>
+
+    <section class="logwrap panel">
+      <h2>Journal de bord</h2>
+      <ol id="log" class="log"></ol>
+    </section>
+  </main>
+
+  <noscript>Ce jeu nécessite JavaScript.</noscript>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
