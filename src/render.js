@@ -2,6 +2,7 @@
 import { STAR_CLASSES, BODY_TYPES } from './data.js';
 import { SHIP, SHIP_GEAR, SHIP_PALETTE, ASTRO_FRAMES, ASTRO_PALETTE, drawSprite, drawText } from './sprites.js';
 import { Rng, hashMix } from './rng.js';
+import { createPixelPlanets, specForBody, specForStar, specForDestination } from './pixelplanets.js';
 
 export const W = 320;
 export const H = 180;
@@ -58,6 +59,37 @@ function ring(ctx, cx, cy, r, color) {
   }
 }
 
+// ---------- Ciels pixel art (assets/skies) ----------
+// Chaque ciel est une pile de calques 576×324 : le 1 est le fond opaque, les suivants des nuages
+// qu'on fait glisser à des vitesses différentes (parallaxe). On les affiche à l'échelle 1:1.
+const SKY_LAYERS = { night: 3, violet: 4, ember: 4, frost: 4, smog: 3, rose: 3, storm: 4, dusk: 3, amber: 5, lilac: 6 };
+const SKY_W = 576;
+const skies = {};
+for (const [id, n] of Object.entries(SKY_LAYERS)) {
+  skies[id] = Array.from({ length: n }, (_, i) => {
+    const img = new Image();
+    img.src = new URL(`../assets/skies/${id}/${i + 1}.png`, import.meta.url).href;
+    return img;
+  });
+}
+const skyReady = (id) => skies[id]?.every((img) => img.complete && img.naturalWidth > 0);
+
+// Une partie des corps atterrissables a une atmosphère ténue (purement visuel, stable par corps).
+const SKY_BY_TYPE = {
+  icy: ['frost', 'lilac', 'night'],
+  rocky: ['dusk', 'amber', 'smog'],
+  hmc: ['ember', 'amber', 'rose'],
+  metal: ['violet', 'storm', 'lilac'],
+};
+
+export function bodyAtmosphere(body) {
+  const sets = body && SKY_BY_TYPE[body.type];
+  if (!sets) return null;
+  const seed = body.seed % 100000;
+  if (hash2(seed, 7, 3) > 0.45) return null;
+  return sets[Math.floor(hash2(seed, 9, 5) * sets.length)];
+}
+
 // Rend une planète ombrée avec tramage dans un canvas hors-écran (mis en cache).
 function renderPlanet(r, body, light = [-0.8, -0.3, 0.55]) {
   const size = r * 2 + 1;
@@ -105,6 +137,7 @@ export function createRenderer(canvas) {
   ctx.imageSmoothingEnabled = false;
   const cache = new Map();
   let currentStar = 'G';
+  let currentBodies = [];
   const starRng = new Rng(99);
   const stars = Array.from({ length: 140 }, () => ({
     x: starRng.range(0, W),
@@ -112,6 +145,45 @@ export function createRenderer(canvas) {
     b: starRng.range(0.2, 1),
     tw: starRng.range(0, 6.28),
   }));
+
+  // Planètes et étoiles animées (WebGL). Chaque sprite est rafraîchi à cadence réduite
+  // dans un petit canvas 2D, ce qui limite les lectures du canvas WebGL.
+  const pp = createPixelPlanets();
+  const specs = new Map();
+  const sprites = new Map();
+  const specOf = (key, make) => {
+    if (!specs.has(key)) specs.set(key, make());
+    return specs.get(key);
+  };
+
+  function ppSprite(key, spec, D, t, fps = 12) {
+    if (!pp.ok) return null;
+    const ext = pp.extent(spec, D);
+    let s = sprites.get(key);
+    if (!s || s.ext !== ext || s.D !== D) {
+      if (sprites.size > 60) sprites.clear();
+      const c = document.createElement('canvas');
+      c.width = ext;
+      c.height = ext;
+      s = { canvas: c, ctx: c.getContext('2d'), ext, D, at: -1, ok: false, off: Math.round(ext / 2 - D / 2) };
+      sprites.set(key, s);
+    }
+    if (s.at < 0 || t - s.at >= 1 / fps || t < s.at) {
+      s.ctx.clearRect(0, 0, ext, ext);
+      s.ok = pp.draw(s.ctx, spec, ext / 2, ext / 2, D, t);
+      s.at = t;
+    }
+    return s.ok ? s : null;
+  }
+
+  // Dessine un corps de rayon r centré en (x, y). Renvoie false si WebGL est indisponible.
+  function drawBody(body, x, y, r, t, { key = body.id, fps = 12 } = {}) {
+    const D = r * 2 + 1;
+    const spr = ppSprite(`${key}:${D}`, specOf(`b:${body.id}`, () => specForBody(body)), D, t, fps);
+    if (!spr) return false;
+    ctx.drawImage(spr.canvas, x - r - spr.off, y - r - spr.off);
+    return true;
+  }
 
   function planet(body, r) {
     const key = `${body.id}:${r}`;
@@ -135,8 +207,30 @@ export function createRenderer(canvas) {
     ctx.globalAlpha = 1;
   }
 
+  // Ciel nuageux en parallaxe. `top` : ligne du calque source affichée en haut de l'écran.
+  // `between` est appelé après le fond, avant les nuages (pour y glisser étoiles et soleil).
+  function drawSky(id, t, { top = 90, speed = 1, between } = {}) {
+    const layers = skies[id];
+    const span = SKY_W - W;
+    layers.forEach((img, i) => {
+      // Va-et-vient lent (les calques ne bouclent pas), plus rapide pour les calques proches.
+      const v = i === 0 ? 0 : (1.2 + i * 1.6) * speed;
+      const p = (t * v + i * 37) % (2 * span);
+      const sx = Math.round(i === 0 ? span / 2 : p < span ? p : 2 * span - p);
+      ctx.drawImage(img, sx, top, W, H, 0, 0, W, H);
+      if (i === 0 && between) between();
+    });
+  }
+
   function drawStar(code, cx, cy, t) {
     const s = STAR_CLASSES[code];
+    if (code === 'BH' && pp.ok) {
+      const spr = ppSprite('star:BH', specOf('s:BH', () => specForStar('BH')), s.radius * 2 + 1, t, 15);
+      if (spr) {
+        ctx.drawImage(spr.canvas, cx - s.radius - spr.off, cy - s.radius - spr.off);
+        return;
+      }
+    }
     if (code === 'BH') {
       // Disque d'accrétion et lentille gravitationnelle.
       for (let i = 0; i < 3; i++) {
@@ -160,10 +254,12 @@ export function createRenderer(canvas) {
       disc(ctx, cx, cy, Math.round(s.radius + (glowR - s.radius) * (i / 5) + Math.sin(t * 1.5 + i) * 1), s.glow);
     }
     ctx.globalAlpha = 1;
-    disc(ctx, cx, cy, s.radius, s.color);
-    // Granulation
+    const spr = ppSprite(`star:${code}:${s.radius}`, specOf(`s:${code}`, () => specForStar(code)), s.radius * 2 + 1, t, 15);
+    if (spr) ctx.drawImage(spr.canvas, cx - s.radius - spr.off, cy - s.radius - spr.off);
+    else disc(ctx, cx, cy, s.radius, s.color);
+    // Granulation (rendu de secours uniquement)
     const sr = new Rng(hashMix(code, Math.floor(t * 4)));
-    for (let i = 0; i < s.radius * 2; i++) {
+    for (let i = 0; !spr && i < s.radius * 2; i++) {
       const a = sr.range(0, 6.28), d = sr.range(0, s.radius - 1);
       ctx.fillStyle = s.glow;
       ctx.globalAlpha = 0.35;
@@ -227,7 +323,9 @@ export function createRenderer(canvas) {
     const wave = view.scanWave;
     for (const { body, x, y, r } of layout) {
       const visible = body.revealed >= 1 && (wave == null || wave > x - shipCx);
-      if (visible) {
+      if (visible && drawBody(body, x, y, r, t)) {
+        // Rendu WebGL (anneaux compris).
+      } else if (visible) {
         if (body.rings) {
           ctx.fillStyle = '#b8a888';
           ctx.globalAlpha = 0.7;
@@ -254,6 +352,14 @@ export function createRenderer(canvas) {
       if (body.landed) {
         ctx.fillStyle = '#6fd3ff';
         ctx.fillRect(x - 1, y - Math.max(r, 4) - 3, 3, 1);
+      }
+      if (view.hoverBody === body.id && view.selectedBodyId !== body.id) {
+        const s = Math.max(r, 4) + 3;
+        ctx.fillStyle = '#a85a12';
+        for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+          ctx.fillRect(x + sx * s - (sx > 0 ? 1 : 0), y + sy * s, 2, 1);
+          ctx.fillRect(x + sx * s, y + sy * s - (sy > 0 ? 1 : 0), 1, 2);
+        }
       }
       if (view.selectedBodyId === body.id) {
         const s = Math.max(r, 4) + 3 + (Math.sin(t * 6) > 0 ? 1 : 0);
@@ -363,10 +469,20 @@ export function createRenderer(canvas) {
   }
 
   function surfaceBackdrop(body, t) {
-    starfield(t, 0.2);
-    // Étoile du système, basse sur l'horizon, et une planète voisine dans le ciel.
+    // Étoile du système, basse sur l'horizon.
     const star = STAR_CLASSES[currentStar];
-    disc(ctx, 270, 34, Math.max(2, Math.round(star.radius / 8)), star.color === '#000000' ? '#ff9a3a' : star.color);
+    const sun = () => disc(ctx, 270, 34, Math.max(2, Math.round(star.radius / 8)), star.color === '#000000' ? '#ff9a3a' : star.color);
+    const sky = bodyAtmosphere(body);
+    if (sky && skyReady(sky)) {
+      drawSky(sky, t, { top: 70, speed: 0.6, between: sun });
+    } else {
+      starfield(t, 0.2);
+      sun();
+      // Un voisin du système se lève au-dessus de l'horizon.
+      const others = currentBodies.filter((b) => b.id !== body.id);
+      const big = others.sort((a, b) => b.size - a.size)[0];
+      if (big) drawBody(big, 70, 70, big.size >= 12 ? 22 : 12, t, { key: `${big.id}-sky`, fps: 8 });
+    }
     const ter = terrain(body);
     ctx.drawImage(ter.canvas, 0, 0);
     return ter;
@@ -445,8 +561,10 @@ export function createRenderer(canvas) {
       // Orbite : courbe de la planète en bas de l'écran.
       starfield(t, 4);
       const R = 260;
-      const img = planet({ ...body, id: `${body.id}-big` }, R);
-      ctx.drawImage(img, W / 2 - R, 120 - Math.round(st * 8));
+      if (!drawBody(body, W / 2, 120 - Math.round(st * 8) + R, R, t, { key: `${body.id}-big`, fps: 6 })) {
+        const img = planet({ ...body, id: `${body.id}-big` }, R);
+        ctx.drawImage(img, W / 2 - R, 120 - Math.round(st * 8));
+      }
       const k = st / 2.2;
       drawShip(-30 + k * 260, 50 + k * 30, t, { thrust: 1 });
       return;
@@ -462,6 +580,17 @@ export function createRenderer(canvas) {
       const y = -30 + (landedY + 30) * ease;
       const x = SHIP_LAND_X - 60 + 60 * ease;
       drawShip(x, y, t, { scale: 2, thrust: 1, gear: k > 0.7 });
+      // Traversée de la couche nuageuse.
+      const sky = bodyAtmosphere(body);
+      if (sky && skyReady(sky) && k < 0.75) {
+        const layers = skies[sky];
+        const img = layers[layers.length - 1];
+        const kk = k / 0.75;
+        ctx.globalAlpha = Math.min(1, (1 - kk) * 2);
+        ctx.drawImage(img, 120, 60, W, 264, 0, Math.round(H - kk * (H + 264)), W, 264);
+        ctx.drawImage(layers[Math.max(1, layers.length - 2)], 200, 60, W, 264, 0, Math.round(H + 80 - kk * (H + 344)), W, 264);
+        ctx.globalAlpha = 1;
+      }
       // Poussée verticale
       for (let i = 0; i < 6; i++) {
         ctx.fillStyle = i % 2 ? '#ffe28a' : '#ff7a2a';
@@ -568,10 +697,34 @@ export function createRenderer(canvas) {
     ctx.globalAlpha = 1;
   }
 
+  // Écran titre : nuit sur le monde de départ, l'Asp Explorer traverse le ciel.
+  function titleScene(view, t) {
+    const twinkle = () => {
+      for (const s of stars) {
+        if (s.y > 110) continue;
+        ctx.globalAlpha = s.b * (0.5 + 0.5 * Math.sin(t * 2 + s.tw)) * 0.8;
+        ctx.fillStyle = '#e8ecff';
+        ctx.fillRect(Math.round(s.x), Math.round(s.y), 1, 1);
+      }
+      ctx.globalAlpha = 1;
+    };
+    const moon = { id: 'title-moon', type: 'icy', seed: 4242 };
+    const between = () => {
+      twinkle();
+      drawBody(moon, 280, 26, 12, t, { fps: 8 });
+    };
+    if (skyReady('night')) drawSky('night', t, { top: 110, speed: 0.8, between });
+    else starfield(t, 1);
+    const k = (t * 0.05) % 1.3;
+    drawShip(Math.round(-40 + k * 320), Math.round(78 - k * 50 + Math.sin(t * 1.4) * 1.5), t, { thrust: 1 });
+  }
+
   function endScene(view, t) {
     starfield(t, 0.5);
     const victory = view.state.phase === 'victory';
-    if (victory) {
+    const gal = victory && ppSprite('dest', specOf('dest', specForDestination), 121, t, 12);
+    if (gal) ctx.drawImage(gal.canvas, 200 - 60 - gal.off, 80 - 60 - gal.off);
+    if (victory && !gal) {
       // La nébuleuse de destination.
       for (let i = 0; i < 400; i++) {
         const a = hash2(i, 1, 3) * 6.28, d = hash2(i, 2, 3) * 70;
@@ -580,6 +733,8 @@ export function createRenderer(canvas) {
         ctx.fillRect(Math.round(200 + Math.cos(a) * d * 1.3 + Math.sin(t + i) * 0.5), Math.round(80 + Math.sin(a) * d * 0.7), 2, 2);
       }
       ctx.globalAlpha = 1;
+    }
+    if (victory) {
       drawShip(60 + Math.sin(t) * 2, 100, t, { thrust: 1 });
     } else {
       // Épave dérivante.
@@ -595,12 +750,14 @@ export function createRenderer(canvas) {
     render(view, t) {
       ctx.imageSmoothingEnabled = false;
       currentStar = view.state?.system?.star || 'G';
+      currentBodies = view.state?.system?.bodies || [];
       switch (view.scene) {
         case 'jump': jumpScene(view, t); break;
         case 'landing': landingScene(view, t); break;
         case 'surface': surfaceScene(view, t); break;
         case 'takeoff': takeoffScene(view, t); break;
         case 'end': endScene(view, t); break;
+        case 'title': titleScene(view, t); break;
         default: systemScene(view, t);
       }
     },

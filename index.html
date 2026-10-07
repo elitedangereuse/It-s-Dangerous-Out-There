@@ -12,24 +12,31 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>It's Dangerous Out There</h1>
-    <div id="route" class="route"></div>
+    <h1 class="logo">It's Dangerous<span> Out There</span></h1>
+    <div id="route" class="route" aria-label="Progression du voyage"></div>
+    <div id="gauges" class="gauges" aria-label="État du vaisseau"></div>
   </header>
 
   <main class="layout">
-    <section class="viewport-wrap">
-      <canvas id="screen" width="320" height="180" aria-label="Vue du vaisseau"></canvas>
-      <div id="overlay" class="overlay" hidden></div>
+    <section class="stage-col">
+      <div class="stage" id="stage">
+        <canvas id="screen" width="320" height="180" aria-label="Vue du vaisseau"></canvas>
+        <canvas id="navmap" class="navmap" width="640" height="360" hidden aria-label="Carte de navigation"></canvas>
+        <div id="tip" class="tip" hidden></div>
+        <ol id="toasts" class="toasts" aria-live="polite"></ol>
+        <div id="overlay" class="overlay" hidden></div>
+      </div>
+      <nav id="dock" class="dock" aria-label="Actions"></nav>
     </section>
 
-    <aside id="hud" class="hud panel"></aside>
-
-    <section id="panel" class="context panel"></section>
-
-    <section class="logwrap panel">
-      <h2>Journal de bord</h2>
-      <ol id="log" class="log"></ol>
-    </section>
+    <aside class="side">
+      <div class="tabs" role="tablist">
+        <button role="tab" data-tab="ctx" id="tab-ctx"></button>
+        <button role="tab" data-tab="ship">Vaisseau<kbd>V</kbd></button>
+        <button role="tab" data-tab="log">Journal<kbd>J</kbd></button>
+      </div>
+      <section id="panel" class="panel" role="tabpanel"></section>
+    </aside>
   </main>
 
   <noscript>Ce jeu nécessite JavaScript.</noscript>
