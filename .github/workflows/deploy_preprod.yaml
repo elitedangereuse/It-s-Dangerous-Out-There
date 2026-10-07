@@ -1,4 +1,4 @@
-name: Déploiement FTP
+name: [PREPROD] Déploiement FTP
 
 on:
   push:
