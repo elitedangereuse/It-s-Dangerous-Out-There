@@ -1,0 +1,12 @@
+{
+  "name": "its-dangerous-out-there",
+  "version": "0.1.0",
+  "description": "Roguelite d'exploration spatiale en pixel art, inspiré de FTL et Out There, dans l'univers d'Elite Dangerous.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "license": "MIT"
+}
