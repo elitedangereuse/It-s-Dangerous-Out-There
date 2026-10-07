@@ -147,6 +147,43 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const round1 = (v) => Math.round(v * 10) / 10;
 const kbd = (k) => (k ? `<kbd>${k}</kbd>` : '');
 
+// ---------- Icônes en pixels (8×8, couleur courante) ----------
+
+const ICON_BITMAPS = {
+  fuel: ['...##...', '...##...', '..####..', '.######.', '.####.#.', '.####.#.', '..####..', '........'],
+  bolt: ['....###.', '...###..', '..###...', '.######.', '...###..', '..###...', '..##....', '.#......'],
+  hull: ['.######.', '########', '###..###', '###..###', '.######.', '..####..', '...##...', '........'],
+  radar: ['#####...', '.....#..', '###...#.', '...#...#', '##..#..#', '.#..#..#', '.#..#..#', '........'],
+  scope: ['.####...', '#....#..', '#.#..#..', '#....#..', '.####...', '....##..', '.....##.', '......##'],
+  flask: ['..####..', '...##...', '...##...', '..#..#..', '.#....#.', '.######.', '########', '.######.'],
+  compass: ['...#....', '...#....', '..###...', '#######.', '..###...', '...#....', '...#....', '........'],
+  jump: ['......##', '.....###', '....###.', '.#.###..', '..###...', '..##....', '.#..#...', '#.......'],
+  land: ['...##...', '...##...', '...##...', '.######.', '..####..', '...##...', '........', '########'],
+  takeoff: ['...##...', '..####..', '.######.', '...##...', '...##...', '...##...', '........', '########'],
+  check: ['........', '.......#', '......##', '#....##.', '##..##..', '.####...', '..##....', '........'],
+  leaf: ['....####', '..######', '.###.###', '.##.####', '.#.####.', '.#.###..', '#.......', '........'],
+  geo: ['.#...#..', '..#.#...', '...#....', '..###...', '.#####..', '#######.', '########', '........'],
+  gem: ['...##...', '..####..', '.##..##.', '##....##', '.##..##.', '..####..', '...##...', '........'],
+  target: ['..####..', '.#....#.', '#..##..#', '#.####.#', '#.####.#', '#..##..#', '.#....#.', '..####..'],
+  skull: ['.######.', '########', '#..##..#', '#..##..#', '########', '.##..##.', '.######.', '.#.##.#.'],
+  ship: ['........', '##......', '.###....', '.######.', '.#######', '.######.', '.###....', '##......'],
+  star: ['...#....', '...#....', '.#####..', '#######.', '.#####..', '...#....', '...#....', '........'],
+  alert: ['...##...', '..####..', '..#..#..', '.##..##.', '.##..##.', '########', '###..###', '########'],
+  back: ['........', '..#.....', '.##.....', '#######.', '.##.....', '..#.....', '........', '........'],
+};
+const ICON_PATHS = Object.fromEntries(
+  Object.entries(ICON_BITMAPS).map(([k, rows]) => {
+    let d = '';
+    rows.forEach((row, y) => {
+      for (const m of row.matchAll(/#+/g)) d += `M${m.index} ${y}h${m[0].length}v1h-${m[0].length}z`;
+    });
+    return [k, d];
+  }),
+);
+const icon = (name) => `<svg class="ico ${name}" viewBox="0 0 8 8" aria-hidden="true"><path d="${ICON_PATHS[name]}"/></svg>`;
+
+const GAUGE_ICONS = { fuel: 'fuel', hull: 'hull', energy: 'bolt' };
+
 function gauge(cls, label, v, max, unit = '') {
   const low = v / max < 0.25;
   const prev = view.prev[cls];
@@ -157,7 +194,7 @@ function gauge(cls, label, v, max, unit = '') {
   }
   view.prev[cls] = v;
   return `<div class="gauge ${cls} ${low ? 'low' : ''}" title="${label} : ${round1(v)}${unit} / ${max}${unit}">
-    <div class="lbl"><span>${label}</span><span>${round1(v)}${unit}${delta}</span></div>
+    ${icon(GAUGE_ICONS[cls])}<div class="lbl"><span>${label}</span><span>${round1(v)}${unit}${delta}</span></div>
     <div class="track"><i style="width:${pct(v, max)}%"></i></div></div>`;
 }
 
@@ -166,9 +203,9 @@ function renderTop() {
   const total = state.galaxy.destination.dist;
   const p = pct(total - d, total);
   $('#route').innerHTML = `
-    <span class="end muted">${esc(state.galaxy.origin.name)}</span>
-    <span class="track" title="${Math.round(p)} % du voyage"><i style="width:${p}%"></i><span class="ship" style="left:${p}%"></span></span>
-    <span class="end" title="${esc(state.galaxy.destination.system)}"><b>${esc(state.galaxy.destination.name)}</b></span>
+    <span class="end muted">${icon('star')}<span>${esc(state.galaxy.origin.name)}</span></span>
+    <span class="track-wrap" title="${Math.round(p)} % du voyage"><span class="track"><i style="width:${p}%"></i></span><span class="ship" style="left:${p}%">${icon('ship')}</span></span>
+    <span class="end goal" title="${esc(state.galaxy.destination.system)}">${icon('target')}<b>${esc(state.galaxy.destination.name)}</b></span>
     <span class="stats"><b>${Math.round(d)}</b> al · <b>${state.jumps}</b> sauts</span>`;
   const s = state.ship;
   $('#gauges').innerHTML =
@@ -195,12 +232,12 @@ function bodyIcons(b) {
   if (b.revealed === 0) return '';
   const ic = [];
   if (b.revealed >= 2) {
-    if (b.bio) ic.push(`🌿${b.bio}`);
-    if (b.geo) ic.push(`🌋${b.geo}`);
-    if (b.feature) ic.push('◈');
-    if (b.terraformable) ic.push('T');
-  } else if (b.hint) ic.push('!');
-  if (b.landed) ic.push('<span class="tag">✓</span>');
+    if (b.bio) ic.push(`<span class="good" title="Signaux biologiques">${icon('leaf')}${b.bio}</span>`);
+    if (b.geo) ic.push(`<span title="Signaux géologiques">${icon('geo')}${b.geo}</span>`);
+    if (b.feature) ic.push(`<span class="tag" title="Anomalie">${icon('gem')}</span>`);
+    if (b.terraformable) ic.push('<span title="Terraformable">T</span>');
+  } else if (b.hint) ic.push(`<span title="Signal détecté">${icon('alert')}</span>`);
+  if (b.landed) ic.push(`<span class="tag" title="Visité">${icon('check')}</span>`);
   return ic.join(' ');
 }
 
@@ -256,7 +293,7 @@ function systemPanel() {
     <h2>${esc(sys.name)}</h2>
     <div class="chips">${chips.join('')}</div>
     ${unknown && !scanning ? `<div class="empty">Système inconnu. Lancez un <b>scan automatique</b> ${kbd('A')} pour révéler les corps, ou ciblez un signal pour un scan détaillé.</div>` : ''}
-    ${scanning ? '<p class="tag">Scan en cours…</p>' : ''}
+    ${scanning ? '<p class="scanning">Scan en cours…</p>' : ''}
     ${sel ? bodyDetail(sel) : ''}
     <h3>Corps du système (${sys.bodies.length})</h3>
     <div class="bodies">${sys.bodies.map((b) => bodyRow(b, scanning)).join('')}</div>
@@ -311,9 +348,9 @@ function navPanel() {
       const star = STAR_CLASSES[c.star];
       const regions = c.regions.length ? ` · <span class="bad">${c.regions.map((r) => REGION_TYPES[r].name).join(', ')}</span>` : '';
       return `<button class="cand ${c.isDestination ? 'dest' : ''} ${c.id === view.navSel ? 'sel' : ''} ${check.ok ? '' : 'out'}" data-cand="${c.id}">
-        <span class="name">${c.isDestination ? '🎯 ' : ''}${esc(c.name)}</span>
+        <span class="name">${c.isDestination ? icon('target') : ''}${esc(c.name)}</span>
         <span class="gain ${gain >= 0 ? 'good' : 'bad'}">${gain >= 0 ? '−' : '+'}${Math.abs(Math.round(gain))} al</span>
-        <span class="star">${star.name}${star.scoopable ? ' ⛽' : ''}${star.boost ? ' ⚡' : ''}${regions}</span>
+        <span class="star">${star.name}${star.scoopable ? icon('fuel') : ''}${star.boost ? icon('bolt') : ''}${regions}</span>
         <span class="star">${check.ok ? `${d.toFixed(1)} al · ${fuel} t` : `<span class="bad">${check.reason}</span>`}</span>
       </button>`;
     })
@@ -322,13 +359,13 @@ function navPanel() {
     <h2>Navigation</h2>
     <p class="sub">Portée ${state.effectiveRange.toFixed(1)} al · ${round1(state.ship.fuel)} t de carburant</p>
     <div class="cands">${list}</div>
-    <p class="legend">⛽ étoile écopable · ⚡ jet de suralimentation · en vert : distance gagnée vers la destination. Double-clic pour sauter directement.</p>`;
+    <p class="legend">${icon('fuel')} étoile écopable · ${icon('bolt')} jet de suralimentation · en vert : distance gagnée vers la destination. Double-clic pour sauter directement.</p>`;
 }
 
 function jumpAction(sel) {
   return {
     act: 'jump',
-    icon: '🚀',
+    icon: icon('jump'),
     label: `Sauter vers ${sel.c.name}`,
     cost: sel.check.ok ? `${sel.fuel} t` : '',
     why: sel.check.ok ? '' : sel.check.reason,
@@ -351,10 +388,10 @@ function drawNavmap() {
   if (navCanvas.hidden) return;
   const ctx = navCanvas.getContext('2d');
   const { w, h, range, scale, cx, cy, P } = navLayout();
-  ctx.fillStyle = '#03040a';
+  ctx.fillStyle = '#05061a';
   ctx.fillRect(0, 0, w, h);
   // Grille
-  ctx.strokeStyle = 'rgba(255, 140, 26, 0.06)';
+  ctx.strokeStyle = 'rgba(125, 132, 240, 0.09)';
   ctx.lineWidth = 1;
   for (let x = (cx % 40) + 0.5; x < w; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
   for (let y = (cy % 40) + 0.5; y < h; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
@@ -370,7 +407,7 @@ function drawNavmap() {
     ctx.setLineDash([]);
   }
   // Trajet parcouru
-  ctx.strokeStyle = '#a85a12';
+  ctx.strokeStyle = '#a993ff';
   ctx.lineWidth = 2;
   ctx.beginPath();
   state.path.forEach((p, i) => {
@@ -386,7 +423,7 @@ function drawNavmap() {
   ctx.arc(cx, cy, range * scale, 0, Math.PI * 2);
   ctx.stroke();
   ctx.setLineDash([]);
-  ctx.font = '18px VT323, monospace';
+  ctx.font = '15px "Pixelify Sans", VT323, monospace';
   ctx.fillStyle = 'rgba(111, 211, 255, 0.7)';
   ctx.fillText(`portée ${range.toFixed(1)} al`, cx + range * scale * 0.72, cy - range * scale * 0.72);
   // Destination
@@ -394,7 +431,7 @@ function drawNavmap() {
   const a = Math.atan2(dest.y - state.pos.y, dest.x - state.pos.x);
   const [dx, dy] = P(dest);
   const inside = dx > 10 && dx < w - 10 && dy > 10 && dy < h - 10;
-  ctx.fillStyle = '#7ee08a';
+  ctx.fillStyle = '#7df0b4';
   if (inside) {
     ctx.fillRect(dx - 4, dy - 4, 9, 9);
     ctx.fillText(dest.name, dx + 10, dy + 5);
@@ -419,7 +456,7 @@ function drawNavmap() {
     const sel = cand.id === view.navSel, hover = cand.id === view.hoverCand;
     view.navPoints.push({ id: cand.id, x, y });
     if (sel) {
-      ctx.strokeStyle = '#ff8c1a';
+      ctx.strokeStyle = '#ffb054';
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 4]);
       ctx.beginPath();
@@ -430,20 +467,20 @@ function drawNavmap() {
       ctx.lineWidth = 1;
     }
     ctx.globalAlpha = ok ? 1 : 0.3;
-    ctx.fillStyle = cand.isDestination ? '#7ee08a' : star.color === '#000000' ? '#ff9a3a' : star.color;
+    ctx.fillStyle = cand.isDestination ? '#7df0b4' : star.color === '#000000' ? '#ff9a3a' : star.color;
     ctx.beginPath();
     ctx.arc(x, y, sel || hover ? 6 : 4, 0, Math.PI * 2);
     ctx.fill();
     if (sel || hover) {
-      ctx.strokeStyle = sel ? '#ffb347' : '#a85a12';
+      ctx.strokeStyle = sel ? '#ffd18a' : '#7d84f0';
       ctx.strokeRect(Math.round(x) - 10.5, Math.round(y) - 10.5, 21, 21);
-      ctx.fillStyle = '#f2d9b8';
+      ctx.fillStyle = '#ecebff';
       ctx.fillText(cand.name, x + 14, y + 5);
     }
     ctx.globalAlpha = 1;
   }
   // Vaisseau
-  ctx.fillStyle = '#ff8c1a';
+  ctx.fillStyle = '#ffb054';
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(Math.PI / 4);
@@ -498,7 +535,7 @@ function synthPanel() {
           const locked = r.needs && !state.flags[r.needs];
           const cost = Object.entries(r.cost).map(([m, n]) => `<span class="${(have[m] || 0) < n ? 'miss' : ''}">${n} ${MATERIALS[m].short}</span>`).join(' + ');
           return `<button class="recipe" data-synth="${r.id}" ${G.canSynthesize(state, r) ? '' : 'disabled'}>
-            <span>${r.name}${owned ? ' ✓' : ''}</span><span class="k">${cost}</span>
+            <span>${r.name}${owned ? ` <span class="good">${icon('check')}</span>` : ''}</span><span class="k">${cost}</span>
             <span class="c">${locked ? 'Plan requis (ruines gardiennes)' : owned ? 'Déjà installé' : r.desc}</span></button>`;
         })
         .join('')}</div>`)
@@ -517,20 +554,25 @@ function matsGrid() {
 function shipPanel() {
   const s = state.ship;
   const mods = Object.entries(s.modules)
-    .map(([k, v]) => `<span>${MODULES[k].name}</span><span class="${v < 30 ? 'low' : v < 60 ? 'mid' : ''}">${Math.round(v)} %</span>`)
+    .map(([k, v]) => {
+      const lvl = v < 30 ? 'low' : v < 60 ? 'mid' : '';
+      return `<div class="module"><span>${MODULES[k].name}</span><span class="v ${lvl}">${Math.round(v)} %</span><span class="mini"><i class="${lvl}" style="width:${pct(v, 100)}%"></i></span></div>`;
+    })
     .join('');
-  const bar = (label, v, max, unit = '', cls = '') => `<div class="gauge ${cls} ${v / max < 0.25 ? 'low' : ''}"><div class="lbl"><span>${label}</span><span>${round1(v)}${unit} / ${max}${unit}</span></div><div class="track"><i style="width:${pct(v, max)}%"></i></div></div>`;
+  const bar = (label, v, max, unit = '', cls = '') => `<div class="gauge ${cls} ${v / max < 0.25 ? 'low' : ''}">${icon(GAUGE_ICONS[cls])}<div class="lbl"><span>${label}</span><span>${round1(v)}${unit} / ${max}${unit}</span></div><div class="track"><i style="width:${pct(v, max)}%"></i></div></div>`;
   return `
     <h2>${esc(s.name)}</h2>
-    <div class="bars">${bar('Carburant', s.fuel, s.fuelMax, ' t', 'fuel')}${bar('Coque', s.hull, s.hullMax)}${bar('Énergie', s.energy, s.energyMax, '', 'energy')}</div>
+    <div class="bars">${bar('Carburant', s.fuel, s.fuelMax, ' t', 'fuel')}${bar('Coque', s.hull, s.hullMax, '', 'hull')}${bar('Énergie', s.energy, s.energyMax, '', 'energy')}</div>
+    <div class="stats-list">
     <div class="row"><span>Portée de saut</span><span class="tag">${state.effectiveRange.toFixed(1)} al</span></div>
     ${s.boost > 1 ? `<div class="row"><span>FSD suralimenté</span><span class="tag">×${s.boost}</span></div>` : ''}
     <div class="row"><span>Données d'exploration</span><span class="tag">${state.data}</span></div>
+    </div>
     <h3>Modules</h3>
     <div class="modules">${mods}</div>
     <h3>Matériaux</h3>
     ${matsGrid()}
-    <p class="muted" style="margin-top:10px">Graine de la galaxie : ${state.seed}</p>`;
+    <p class="seed">Graine de la galaxie : ${state.seed}</p>`;
 }
 
 function logPanel() {
@@ -547,7 +589,7 @@ function actionButton(a) {
   if (a.sep) return '<span class="sep"></span>';
   if (a.hint) return `<span class="hint">${a.hint}</span>`;
   const attrs = Object.entries(a.data || {}).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ');
-  return `<button class="${a.primary ? 'primary' : ''}" ${a.act ? `data-act="${a.act}"` : ''} ${a.key ? `data-key="${esc(a.key)}"` : ''} ${attrs} ${a.disabled ? 'disabled' : ''} title="${esc(a.why || '')}">${a.icon ? a.icon + ' ' : ''}${esc(a.label)}${a.cost ? `<span class="cost">${a.cost}</span>` : ''}${kbd(a.key)}${a.why && a.inlineWhy !== false ? `<span class="why">${esc(a.why)}</span>` : ''}</button>`;
+  return `<button class="${a.primary ? 'primary' : ''}" ${a.act ? `data-act="${a.act}"` : ''} ${a.key ? `data-key="${esc(a.key)}"` : ''} ${attrs} ${a.disabled ? 'disabled' : ''} title="${esc(a.why || '')}">${a.icon || ''}${esc(a.label)}${a.cost ? `<span class="cost">${a.cost}</span>` : ''}${kbd(a.key)}${a.why && a.inlineWhy !== false ? `<span class="why">${esc(a.why)}</span>` : ''}</button>`;
 }
 
 function bodyActions(b) {
@@ -558,11 +600,11 @@ function bodyActions(b) {
     let why = '';
     if (state.ship.modules.scanner < 25) why = 'Scanner trop endommagé';
     else if (state.ship.energy < scanCost) why = 'Énergie insuffisante';
-    acts.push({ act: 'manual', icon: '🔬', label: 'Scan détaillé', cost: `${scanCost} ⚡`, disabled: !!why, why, key: 'M' });
+    acts.push({ act: 'manual', icon: icon('scope'), label: 'Scan détaillé', cost: `${scanCost}${icon('bolt')}`, disabled: !!why, why, key: 'M' });
   }
   if (b.landable && b.revealed > 0) {
     const check = G.canLand(state, b);
-    acts.push({ act: 'land', icon: '🪐', label: 'Atterrir', cost: `${G.COSTS.land} ⚡`, disabled: !check.ok, why: check.reason || '', primary: true, key: 'L' });
+    acts.push({ act: 'land', icon: icon('land'), label: 'Atterrir', cost: `${G.COSTS.land}${icon('bolt')}`, disabled: !check.ok, why: check.reason || '', primary: true, key: 'L' });
   }
   return acts;
 }
@@ -572,18 +614,18 @@ function dockActions() {
   if (isCinematic()) return [{ act: 'skip', label: 'Passer', key: 'Espace' }];
   if (view.scene === 'end') {
     return [
-      { act: 'new', icon: '🚀', label: 'Nouvelle partie', primary: true, key: 'Entrée' },
+      { act: 'new', icon: icon('jump'), label: 'Nouvelle partie', primary: true, key: 'Entrée' },
       { act: 'retry', label: 'Rejouer cette graine', key: 'R' },
     ];
   }
   if (state.phase === 'event') return [{ hint: 'Décision requise : choisissez une option dans la fenêtre.' }];
-  const back = { act: 'back', label: '← Retour', key: 'Échap' };
+  const back = { act: 'back', icon: icon('back'), label: 'Retour', key: 'Échap' };
   if (view.mode === 'synth') return [back];
   if (view.mode === 'nav') {
     const sel = navCands().find((x) => x.c.id === view.navSel);
     return [back, ...(sel ? [jumpAction(sel)] : [])];
   }
-  const synth = { act: 'synth', icon: '🧪', label: 'Synthèse', key: 'Y' };
+  const synth = { act: 'synth', icon: icon('flask'), label: 'Synthèse', key: 'Y' };
   if (state.phase === 'surface') {
     const acts = G.surfaceActions(state);
     let n = 0;
@@ -594,9 +636,9 @@ function dockActions() {
         const low = a.cost && state.ship.energy < a.cost && !takeoff;
         return {
           data: { surf: a.id },
-          icon: takeoff ? '🛫' : a.done ? '✓' : '',
+          icon: takeoff ? icon('takeoff') : a.done ? icon('check') : '',
           label: takeoff ? 'Décoller' : a.label,
-          cost: a.cost ? `${a.cost} ⚡` : '',
+          cost: a.cost ? `${a.cost}${icon('bolt')}` : '',
           disabled: a.done || low,
           why: low ? 'Énergie insuffisante' : '',
           inlineWhy: false,
@@ -611,11 +653,11 @@ function dockActions() {
   const sys = state.system;
   const star = STAR_CLASSES[sys.star];
   const acts = [
-    { act: 'auto', icon: '📡', label: 'Scan automatique', cost: `${G.COSTS.autoScan} ⚡`, disabled: sys.autoScanned || state.ship.energy < G.COSTS.autoScan, why: sys.autoScanned ? 'Déjà fait' : '', inlineWhy: false, key: 'A', primary: !sys.autoScanned },
+    { act: 'auto', icon: icon('radar'), label: 'Scan automatique', cost: `${G.COSTS.autoScan}${icon('bolt')}`, disabled: sys.autoScanned || state.ship.energy < G.COSTS.autoScan, why: sys.autoScanned ? 'Déjà fait' : '', inlineWhy: false, key: 'A', primary: !sys.autoScanned },
   ];
-  if (star.scoopable) acts.push({ act: 'scoop', icon: '⛽', label: sys.scooped ? 'Écopage fait' : 'Écoper', cost: star.heat > 0.1 && !sys.scooped ? 'chaleur' : '', disabled: !G.canScoop(state), key: 'E' });
-  if (star.boost) acts.push({ act: 'boost', icon: '⚡', label: `Jet ×${star.boost}`, cost: 'dégâts', disabled: !G.canBoost(state), key: 'B' });
-  acts.push({ sep: true }, synth, { act: 'nav', icon: '🚀', label: 'Navigation', key: 'N', primary: sys.autoScanned });
+  if (star.scoopable) acts.push({ act: 'scoop', icon: icon('fuel'), label: sys.scooped ? 'Écopage fait' : 'Écoper', cost: star.heat > 0.1 && !sys.scooped ? 'chaleur' : '', disabled: !G.canScoop(state), key: 'E' });
+  if (star.boost) acts.push({ act: 'boost', icon: icon('bolt'), label: `Jet ×${star.boost}`, cost: 'dégâts', disabled: !G.canBoost(state), key: 'B' });
+  acts.push({ sep: true }, synth, { act: 'nav', icon: icon('compass'), label: 'Navigation', key: 'N', primary: sys.autoScanned });
   return acts;
 }
 
@@ -627,19 +669,20 @@ function eventCard() {
     ? `<p class="outcome">${esc(ev.outcome)}</p><div class="choices"><button class="primary" data-act="close">Continuer${kbd('Entrée')}</button></div>`
     : `<div class="choices">${ev.def.choices
         .map((c, i) => {
-          const cost = c.cost ? Object.entries(c.cost).map(([k, v]) => `${v} ${k === 'energy' ? '⚡' : 't ⛽'}`).join(', ') : '';
+          const cost = c.cost ? Object.entries(c.cost).map(([k, v]) => `${v}${k === 'energy' ? icon('bolt') : ` t${icon('fuel')}`}`).join(', ') : '';
           return `<button data-choice="${i}" ${G.choiceAvailable(state, c) ? '' : 'disabled'}>${esc(c.label)}${cost ? `<span class="cost">${cost}</span>` : ''}${kbd(i + 1)}</button>`;
         })
         .join('')}</div>`;
-  return `<div class="card" role="dialog" aria-labelledby="evt"><h2 id="evt">${esc(ev.def.title)}</h2><p>${esc(ev.def.text)}</p>${choices}</div>`;
+  return `<div class="card event-card" role="dialog" aria-labelledby="evt"><div class="eyebrow">${icon('alert')}Événement</div><h2 id="evt">${esc(ev.def.title)}</h2><p class="lead">${esc(ev.def.text)}</p>${choices}</div>`;
 }
 
 function endCard() {
   const v = state.phase === 'victory';
   const st = state.stats;
   const top = [...state.discoveries].sort((a, b) => b.pts - a.pts).slice(0, 5);
-  return `<div class="card end" role="dialog">
-    <h2>${v ? '🎯 Destination atteinte' : '☠ Fin du voyage'}</h2>
+  return `<div class="card end ${v ? 'won' : 'lost'}" role="dialog">
+    <div class="eyebrow">${v ? `${icon('target')}Victoire` : `${icon('skull')}Fin de partie`}</div>
+    <h2>${v ? 'Destination atteinte' : 'Fin du voyage'}</h2>
     <p>${esc(state.end.reason)}</p>
     <div class="stats">
       <span>Sauts</span><span>${state.jumps}</span>
@@ -650,7 +693,7 @@ function endCard() {
       <span>Organismes catalogués</span><span>${st.bioSamples}</span>
       <span>Données d'exploration</span><span class="tag">${state.data}</span>
     </div>
-    ${top.length ? `<p class="muted">${top.map((d) => esc(d.label)).join('<br>')}</p>` : ''}
+    ${top.length ? `<p class="top">${top.map((d) => esc(d.label)).join('<br>')}</p>` : ''}
     <div class="choices">
       <button class="primary" data-act="new">Nouvelle partie${kbd('Entrée')}</button>
       <button data-act="retry">Rejouer la graine${kbd('R')}</button>
@@ -659,17 +702,18 @@ function endCard() {
 
 function titleCard() {
   return `<div class="card title-card">
-    <div class="logo-big">It's Dangerous<br>Out There</div>
+    <div class="kicker">Roguelite d'exploration spatiale</div>
+    <div class="logo-big">It's Dangerous<span>Out There</span></div>
     <p class="motto">« La destination est certaine. Le voyage ne l'est jamais. »</p>
-    <p>Rejoignez <b>${esc(state.galaxy.destination.name)}</b>, à ${Math.round(state.galaxy.destination.dist)} années-lumière, à bord d'un Asp Explorer. Carburant, coque et énergie sont comptés.</p>
-    <div class="choices"><button class="primary" data-act="start">🚀 Décoller${kbd('Entrée')}</button></div>
+    <p>Rejoignez <b>${esc(state.galaxy.destination.name)}</b>, à ${Math.round(state.galaxy.destination.dist)} années-lumière, à bord d'un Mandalay. Carburant, coque et énergie sont comptés.</p>
+    <div class="choices"><button class="primary" data-act="start">${icon('takeoff')}Décoller${kbd('Entrée')}</button></div>
     <details><summary>Comment jouer</summary><ul>
       <li>Scannez chaque système ${kbd('A')} et examinez les corps (clic ou ${kbd('←')}${kbd('→')}).</li>
       <li>Écopez les étoiles KGBFOAM ${kbd('E')} pour refaire le plein.</li>
       <li>Posez-vous ${kbd('L')} pour récolter des matériaux, puis réparez et améliorez ${kbd('Y')}.</li>
       <li>Ouvrez la navigation ${kbd('N')}, choisissez une étoile, sautez ${kbd('Entrée')}.</li>
     </ul></details>
-    <p class="muted" style="margin:12px 0 0"><a href="galerie.html" style="color:var(--orange)">Galerie des 500 fonds</a></p></div>`;
+    <p class="gallery"><a href="galerie.html">Galerie des 500 fonds</a></p></div>`;
 }
 
 // ---------- Mise à jour ----------
@@ -719,7 +763,13 @@ function update() {
   const scroll = panel.scrollTop;
   if (view.tab === 'ship') panel.innerHTML = shipPanel();
   else if (view.tab === 'log') panel.innerHTML = logPanel();
-  else if (view.scene === 'title') panel.innerHTML = `<h2>Plan de vol</h2><p>Départ : <b>${esc(state.galaxy.origin.name)}</b></p><p>Destination : <b>${esc(state.galaxy.destination.name)}</b><br><span class="muted">${esc(state.galaxy.destination.system)}</span></p><p>Distance : ${Math.round(state.galaxy.destination.dist)} al</p>${matsGrid()}`;
+  else if (view.scene === 'title') panel.innerHTML = `<h2>Plan de vol</h2>
+    <div class="flight">
+      <div class="leg">${icon('star')}<div><span class="muted">Départ</span><b>${esc(state.galaxy.origin.name)}</b></div></div>
+      <div class="leg goal">${icon('target')}<div><span class="muted">Destination</span><b>${esc(state.galaxy.destination.name)}</b><span class="muted">${esc(state.galaxy.destination.system)}</span></div></div>
+    </div>
+    <div class="row"><span>Distance</span><span class="tag">${Math.round(state.galaxy.destination.dist)} al</span></div>
+    <h3>Soute</h3>${matsGrid()}`;
   else if (isCinematic()) panel.innerHTML = `<h2>${{ jump: 'Saut hyperspatial', landing: 'Approche planétaire', takeoff: 'Décollage' }[view.scene]}</h2><p class="muted">${{ jump: 'Le FSD charge… l\'hyperespace s\'ouvre.', landing: 'Mise en orbite, descente, atterrissage.', takeoff: 'Retour en orbite.' }[view.scene]}</p>`;
   else if (view.mode === 'synth') panel.innerHTML = synthPanel();
   else if (view.mode === 'nav') panel.innerHTML = navPanel();
@@ -727,6 +777,15 @@ function update() {
   else if (view.scene === 'end') panel.innerHTML = logPanel();
   else panel.innerHTML = systemPanel();
   panel.scrollTop = scroll;
+  // Animation d'entrée seulement quand le contenu change de nature (onglet, mode, corps).
+  const key = `${view.tab}|${ctxTabLabel()}|${view.selectedBodyId || ''}`;
+  if (panel.dataset.key !== key) {
+    if (panel.dataset.key) panel.scrollTop = 0;
+    panel.dataset.key = key;
+    panel.classList.remove('enter');
+    void panel.offsetWidth;
+    panel.classList.add('enter');
+  }
 
   $('#dock').innerHTML = dockActions().map(actionButton).join('');
   if (showNav) drawNavmap();

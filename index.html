@@ -4,15 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>It's Dangerous Out There</title>
+  <meta name="theme-color" content="#080a2a">
   <meta name="description" content="Roguelite d'exploration spatiale en pixel art dans l'univers d'Elite Dangerous.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&family=VT323&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <header class="topbar">
-    <h1 class="logo">It's Dangerous<span> Out There</span></h1>
+    <h1 class="logo"><svg class="mark" viewBox="0 0 13 13" aria-hidden="true" shape-rendering="crispEdges">
+      <path fill="#ff9a5c" d="M4 2h5v1h1v1h1v5h-1v1h-1v1H4v-1H3V9H2V4h1V3h1z"/>
+      <path fill="#ffd18a" d="M4 3h3v1H5v1H4v2H3V4h1z"/>
+      <path fill="#c9567a" d="M8 8h2v1H9v1H7V9h1z"/>
+      <path fill="#a993ff" d="M0 8h2v1h2v1h3v1H3v-1H1V9H0zM11 4h2v1h-1v1h-1z"/>
+    </svg>It's Dangerous<span> Out There</span></h1>
     <div id="route" class="route" aria-label="Progression du voyage"></div>
     <div id="gauges" class="gauges" aria-label="État du vaisseau"></div>
   </header>

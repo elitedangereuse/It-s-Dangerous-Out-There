@@ -187,7 +187,7 @@ Le prototype dans ce dépôt implémente la boucle complète :
 
 - Équilibrage (longueur de partie, rareté des matériaux).
 - Plus d'événements et de chaînes narratives sur plusieurs systèmes.
-- Choix du vaisseau de départ (Asp Explorer, Diamondback, Krait Phantom…).
+- Choix du vaisseau de départ (Mandalay, Asp Explorer, Diamondback, Krait Phantom…).
 - Son et musique d'ambiance.
 - Codex consultable des découvertes, méta-progression entre les parties.
 - Sauvegarde de la partie en cours.
