@@ -48,10 +48,69 @@ export const MODULES = {
   life: { name: 'Support vital' },
 };
 
+// Approches de l'écopage : plus près de l'étoile, plus de carburant et plus de chaleur.
+// risk : chance de surchauffe de base ; heatK : poids de la chaleur propre à l'étoile.
+export const SCOOP_APPROACHES = {
+  far: { name: 'Loin', desc: 'Lent mais sans danger', mult: 0.55, risk: 0, heatK: 0.4, dmg: [3, 6], mod: [3, 8] },
+  normal: { name: 'Normale', desc: 'Le compromis habituel', mult: 1, risk: 0.06, heatK: 1.5, dmg: [4, 10], mod: [5, 15] },
+  close: { name: 'Au ras de l\'étoile', desc: 'Plein rapide, chaleur extrême', mult: 1.7, risk: 0.3, heatK: 2.5, dmg: [8, 16], mod: [10, 22] },
+};
+
+// Vaisseaux d'exploration. Les vaisseaux de départ se débloquent d'une partie à l'autre (unlock),
+// les autres se trouvent en épave au milieu d'une partie.
+export const SHIPS = {
+  mandalay: { name: 'Mandalay', maker: 'Zorgon Peterson', fuel: 24, hull: 100, energy: 100, range: 48, desc: 'Équilibré et fiable.' },
+  dbx: { name: 'Diamondback Explorer', maker: 'Lakon', fuel: 28, hull: 80, energy: 90, range: 56, desc: 'Grande portée, coque fragile.', unlock: 'Atteindre une destination, ou piloter un Diamondback récupéré.' },
+  krait: { name: 'Krait Phantom', maker: 'Faulcon DeLacy', fuel: 26, hull: 125, energy: 110, range: 43, desc: 'Robuste mais courte portée.', unlock: 'Piloter un Krait Phantom récupéré sur une épave.' },
+  asp: { name: 'Asp Explorer', maker: 'Lakon', fuel: 32, hull: 100, energy: 100, range: 45, desc: 'Grand réservoir, portée moyenne.', unlock: 'Se poser 25 fois au total, toutes parties confondues.' },
+};
+
+// Passagers récupérés en capsule de survie : un atout, mais le support vital s'use plus vite.
+export const PASSENGERS = {
+  engineer: { name: 'Ingénieure Saskia Orrell', role: 'ingénieure', perk: 'Les réparations de synthèse rendent 50 % de plus.' },
+  navigator: { name: 'Navigateur Idris Kalo', role: 'navigateur', perk: 'Portée de saut +5 al.' },
+  scientist: { name: 'Exobiologiste Mei Tanaka', role: 'exobiologiste', perk: 'Les échantillons biologiques rapportent deux fois plus de données.' },
+};
+
+// Codex des découvertes, conservé d'une partie à l'autre.
+export const CODEX = {
+  'ev:guardian': { cat: 'Xéno', name: 'Ruines gardiennes' },
+  'ev:thargoid': { cat: 'Xéno', name: 'Site de surface thargoïde' },
+  'ev:thargoidProbe': { cat: 'Xéno', name: 'Sonde thargoïde' },
+  'ev:hyperdiction': { cat: 'Xéno', name: 'Hyperdiction thargoïde' },
+  'ev:anomaly': { cat: 'Phénomènes', name: 'Nuage de particules lagrangien' },
+  'ev:flare': { cat: 'Phénomènes', name: 'Éruption stellaire' },
+  'ev:geo': { cat: 'Phénomènes', name: 'Évents géologiques' },
+  'ev:generation': { cat: 'Humains', name: 'Navire générationnel' },
+  'ev:megaship': { cat: 'Humains', name: 'Mégastructure abandonnée' },
+  'ev:wreck': { cat: 'Humains', name: "Épave d'Anaconda" },
+  'ev:crash': { cat: 'Humains', name: 'Vaisseau écrasé' },
+  'ev:distress': { cat: 'Humains', name: 'Balise de détresse' },
+  'ev:derelict': { cat: 'Humains', name: 'Vaisseau abandonné intact' },
+  'ev:escapePod': { cat: 'Humains', name: 'Capsule de survie' },
+  'ev:tankLeak': { cat: 'Humains', name: 'Fuite du réservoir' },
+  'star:W': { cat: 'Étoiles', name: 'Étoile Wolf-Rayet' },
+  'star:D': { cat: 'Étoiles', name: 'Naine blanche' },
+  'star:N': { cat: 'Étoiles', name: 'Étoile à neutrons' },
+  'star:BH': { cat: 'Étoiles', name: 'Trou noir' },
+  'body:elw': { cat: 'Planètes', name: 'Monde de type terrestre' },
+  'body:ammonia': { cat: 'Planètes', name: 'Monde à ammoniaque' },
+  'body:water': { cat: 'Planètes', name: "Monde d'eau" },
+  'body:gasw': { cat: 'Planètes', name: 'Géante gazeuse à eau' },
+  ...Object.fromEntries(['Bacterium', 'Stratum', 'Tussock', 'Osseus', 'Fonticulua', 'Concha', 'Frutexa', 'Aleoida'].map((g) => [`bio:${g}`, { cat: 'Exobiologie', name: g }])),
+};
+
+// Savoir xéno conservé entre parties : chaque palier débloque une réponse, pas de la puissance.
+export const KNOWLEDGE = {
+  glyphs: { name: 'Glyphes gardiens', max: 5, tiers: { 2: 'Le scan automatique signale toujours les ruines gardiennes.', 3: 'Vous savez lire le plan gardien sans éveiller la sentinelle.' } },
+  signals: { name: 'Signaux thargoïdes', max: 5, tiers: { 2: 'Vous savez répondre au chant des sondes.', 4: 'Vous savez imiter le signal qui calme une hyperdiction.' } },
+};
+
 // Recettes de synthèse : réparer → fabriquer → améliorer.
 export const RECIPES = [
   { id: 'hull', kind: 'Réparer', name: 'Réparation de coque', cost: { iron: 2, nickel: 1 }, desc: '+20 coque' },
   { id: 'module', kind: 'Réparer', name: 'Réparation de module', cost: { iron: 1, vanadium: 1, germanium: 1 }, desc: '+40 % au module le plus abîmé' },
+  { id: 'patch', kind: 'Réparer', name: 'Colmater le réservoir', cost: { iron: 1, carbon: 1 }, desc: 'Stoppe la fuite de carburant', needs: 'tankLeak' },
   { id: 'cells', kind: 'Fabriquer', name: "Cellules d'énergie", cost: { carbon: 2, nickel: 1 }, desc: '+35 énergie' },
   { id: 'inj1', kind: 'Fabriquer', name: 'Injection FSD standard', cost: { carbon: 1, vanadium: 1, germanium: 1 }, desc: 'Portée +25 % au prochain saut' },
   { id: 'inj2', kind: 'Fabriquer', name: 'Injection FSD premium', cost: { carbon: 2, germanium: 1, polonium: 1 }, desc: 'Portée +100 % au prochain saut' },
