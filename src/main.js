@@ -2,7 +2,8 @@
 // Principe : la scène occupe le centre, toutes les actions sont dans la barre du bas
 // (avec raccourcis clavier), le panneau de droite donne l'information du moment.
 import * as G from './game.js';
-import { STAR_CLASSES, BODY_TYPES, MATERIALS, MODULES, RECIPES, REGION_TYPES } from './data.js';
+import { STAR_CLASSES, BODY_TYPES, MATERIALS, MODULES, RECIPES, REGION_TYPES, SCOOP_APPROACHES, SHIPS, PASSENGERS, CODEX, KNOWLEDGE } from './data.js';
+import { loadProfile, saveProfile, absorbRun, gameOptions, isUnlocked } from './profile.js';
 import { createRenderer, bodyAtmosphere, W, H, LANDING_DURATION, TAKEOFF_DURATION, JUMP_DURATION } from './render.js';
 import { dist } from './galaxy.js';
 
@@ -13,9 +14,13 @@ const renderer = createRenderer(canvas);
 
 let state;
 let view;
+// Profil entre parties (savoir, codex, vaisseaux) et vaisseau choisi à l'écran titre.
+const profile = loadProfile();
+let shipChoice = isUnlocked(profile, profile.lastShip) ? profile.lastShip : 'mandalay';
+let profileSaved = '';
 
 function newGame(seed, { intro = true } = {}) {
-  state = G.createGame(seed);
+  state = G.createGame(seed, gameOptions(profile, shipChoice));
   for (const l of state.log) l.toasted = true;
   view = {
     scene: 'system',
@@ -29,6 +34,7 @@ function newGame(seed, { intro = true } = {}) {
     hoverCand: null,
     scanWaveStart: null,
     prev: {},
+    unlocked: [],
   };
   $('#toasts').innerHTML = '';
   if (intro) setScene('jump', { jumpStar: state.system.star });
@@ -38,7 +44,7 @@ function newGame(seed, { intro = true } = {}) {
 function showTitle() {
   const params = new URLSearchParams(location.search);
   const seed = params.has('seed') ? Number(params.get('seed')) : Math.floor(Math.random() * 1e9);
-  state = G.createGame(seed);
+  state = G.createGame(seed, gameOptions(profile, shipChoice));
   view = { scene: 'title', sceneStart: performance.now(), state, mode: 'system', tab: 'ctx', prev: {} };
   update();
 }
@@ -529,7 +535,7 @@ function synthPanel() {
     <h2>Synthèse</h2>
     ${matsGrid()}
     ${groups
-      .map((g) => `<h3>${g}</h3><div class="recipes">${RECIPES.filter((r) => r.kind === g)
+      .map((g) => `<h3>${g}</h3><div class="recipes">${RECIPES.filter((r) => r.kind === g && (r.needs !== 'tankLeak' || state.flags.tankLeak))
         .map((r) => {
           const owned = r.once && state.upgrades[r.id];
           const locked = r.needs && !state.flags[r.needs];
@@ -562,11 +568,14 @@ function shipPanel() {
   const bar = (label, v, max, unit = '', cls = '') => `<div class="gauge ${cls} ${v / max < 0.25 ? 'low' : ''}">${icon(GAUGE_ICONS[cls])}<div class="lbl"><span>${label}</span><span>${round1(v)}${unit} / ${max}${unit}</span></div><div class="track"><i style="width:${pct(v, max)}%"></i></div></div>`;
   return `
     <h2>${esc(s.name)}</h2>
+    <p class="sub">${esc(SHIPS[s.model].maker)} · ${esc(SHIPS[s.model].desc)}</p>
     <div class="bars">${bar('Carburant', s.fuel, s.fuelMax, ' t', 'fuel')}${bar('Coque', s.hull, s.hullMax, '', 'hull')}${bar('Énergie', s.energy, s.energyMax, '', 'energy')}</div>
     <div class="stats-list">
     <div class="row"><span>Portée de saut</span><span class="tag">${state.effectiveRange.toFixed(1)} al</span></div>
     ${s.boost > 1 ? `<div class="row"><span>FSD suralimenté</span><span class="tag">×${s.boost}</span></div>` : ''}
     <div class="row"><span>Données d'exploration</span><span class="tag">${state.data}</span></div>
+    ${state.passenger ? `<div class="row"><span>Passager</span><span class="tag">${esc(PASSENGERS[state.passenger].name)}</span></div><p class="muted">${esc(PASSENGERS[state.passenger].perk)} Support vital −${G.PASSENGER_LIFE_DRAIN} % par saut.</p>` : ''}
+    ${state.flags.tankLeak ? `<div class="row"><span class="bad">Réservoir percé</span><span class="tag">−${G.LEAK_PER_JUMP} t/saut</span></div>` : ''}
     </div>
     <h3>Modules</h3>
     <div class="modules">${mods}</div>
@@ -618,7 +627,7 @@ function dockActions() {
       { act: 'retry', label: 'Rejouer cette graine', key: 'R' },
     ];
   }
-  if (state.phase === 'event') return [{ hint: 'Décision requise : choisissez une option dans la fenêtre.' }];
+  if (state.phase === 'event' || view.scoopPick) return [{ hint: 'Décision requise : choisissez une option dans la fenêtre.' }];
   const back = { act: 'back', icon: icon('back'), label: 'Retour', key: 'Échap' };
   if (view.mode === 'synth') return [back];
   if (view.mode === 'nav') {
@@ -655,7 +664,7 @@ function dockActions() {
   const acts = [
     { act: 'auto', icon: icon('radar'), label: 'Scan automatique', cost: `${G.COSTS.autoScan}${icon('bolt')}`, disabled: sys.autoScanned || state.ship.energy < G.COSTS.autoScan, why: sys.autoScanned ? 'Déjà fait' : '', inlineWhy: false, key: 'A', primary: !sys.autoScanned },
   ];
-  if (star.scoopable) acts.push({ act: 'scoop', icon: icon('fuel'), label: sys.scooped ? 'Écopage fait' : 'Écoper', cost: star.heat > 0.1 && !sys.scooped ? 'chaleur' : '', disabled: !G.canScoop(state), key: 'E' });
+  if (star.scoopable) acts.push({ act: 'scoop', icon: icon('fuel'), label: sys.scooped ? 'Écopage fait' : 'Écoper', disabled: !G.canScoop(state), key: 'E' });
   if (star.boost) acts.push({ act: 'boost', icon: icon('bolt'), label: `Jet ×${star.boost}`, cost: 'dégâts', disabled: !G.canBoost(state), key: 'B' });
   acts.push({ sep: true }, synth, { act: 'nav', icon: icon('compass'), label: 'Navigation', key: 'N', primary: sys.autoScanned });
   return acts;
@@ -663,17 +672,42 @@ function dockActions() {
 
 // --- Cartes en surimpression ---
 
+function costLabel(cost = {}) {
+  const parts = [];
+  if (cost.energy) parts.push(`${cost.energy}${icon('bolt')}`);
+  if (cost.fuel) parts.push(`${cost.fuel} t${icon('fuel')}`);
+  if (cost.mats) parts.push(Object.entries(cost.mats).map(([m, n]) => `${n} ${MATERIALS[m].short}`).join(' + '));
+  return parts.join(', ');
+}
+
 function eventCard() {
   const ev = state.event;
   const choices = ev.outcome
     ? `<p class="outcome">${esc(ev.outcome)}</p><div class="choices"><button class="primary" data-act="close">Continuer${kbd('Entrée')}</button></div>`
-    : `<div class="choices">${ev.def.choices
-        .map((c, i) => {
-          const cost = c.cost ? Object.entries(c.cost).map(([k, v]) => `${v}${k === 'energy' ? icon('bolt') : ` t${icon('fuel')}`}`).join(', ') : '';
-          return `<button data-choice="${i}" ${G.choiceAvailable(state, c) ? '' : 'disabled'}>${esc(c.label)}${cost ? `<span class="cost">${cost}</span>` : ''}${kbd(i + 1)}</button>`;
+    : `<div class="choices">${G.eventChoices(state)
+        .map(({ choice, index, label, available }, n) => {
+          const cost = costLabel(choice.cost);
+          return `<button data-choice="${index}" data-n="${n + 1}" class="${choice.when ? 'lore' : ''}" ${available ? '' : 'disabled'}>${esc(label)}${cost ? `<span class="cost">${cost}</span>` : ''}${kbd(n + 1)}</button>`;
         })
         .join('')}</div>`;
-  return `<div class="card event-card" role="dialog" aria-labelledby="evt"><div class="eyebrow">${icon('alert')}Événement</div><h2 id="evt">${esc(ev.def.title)}</h2><p class="lead">${esc(ev.def.text)}</p>${choices}</div>`;
+  return `<div class="card event-card" role="dialog" aria-labelledby="evt"><div class="eyebrow">${icon('alert')}Événement</div><h2 id="evt">${esc(G.eventTitle(state, ev.def))}</h2><p class="lead">${esc(G.eventText(state, ev.def))}</p>${choices}</div>`;
+}
+
+// Écopage : le joueur choisit sa distance à l'étoile, donc son risque.
+function scoopCard() {
+  const star = STAR_CLASSES[state.system.star];
+  const rows = Object.entries(SCOOP_APPROACHES)
+    .map(([id, a], i) => {
+      const p = G.scoopPreview(state, id);
+      const risk = Math.round(p.risk * 100);
+      return `<button data-scoop="${id}" data-n="${i + 1}">${esc(a.name)} <span class="muted">· ${esc(a.desc)}</span>
+        <span class="cost">${p.min}–${p.max} t${icon('fuel')} · <span class="${risk >= 30 ? 'bad' : risk > 0 ? '' : 'good'}">surchauffe ${risk} %</span></span>${kbd(i + 1)}</button>`;
+    })
+    .join('');
+  return `<div class="card event-card" role="dialog" aria-labelledby="scp"><div class="eyebrow">${icon('fuel')}Écopage</div>
+    <h2 id="scp">Approche de l'étoile</h2>
+    <p class="lead">${esc(star.name)}. Plus vous frôlez la couronne, plus le réservoir se remplit vite, et plus la chaleur menace la coque et les modules.</p>
+    <div class="choices">${rows}<button data-act="scoopCancel">Renoncer${kbd('Échap')}</button></div></div>`;
 }
 
 function endCard() {
@@ -694,10 +728,42 @@ function endCard() {
       <span>Données d'exploration</span><span class="tag">${state.data}</span>
     </div>
     ${top.length ? `<p class="top">${top.map((d) => esc(d.label)).join('<br>')}</p>` : ''}
+    ${careerNotes()}
     <div class="choices">
       <button class="primary" data-act="new">Nouvelle partie${kbd('Entrée')}</button>
       <button data-act="retry">Rejouer la graine${kbd('R')}</button>
     </div></div>`;
+}
+
+// Ce que la partie laisse au commandant : savoir, codex, vaisseaux.
+function careerNotes() {
+  const notes = [];
+  const fresh = Object.keys(state.codex).length;
+  if (fresh) notes.push(`${fresh} entrée(s) de codex documentée(s) · codex ${Object.keys(profile.codex).length}/${Object.keys(CODEX).length}`);
+  for (const [k, def] of Object.entries(KNOWLEDGE)) if (state.knowledge[k]) notes.push(`${def.name} : ${state.knowledge[k]}/${def.max}`);
+  for (const m of view.unlocked || []) notes.push(`<b class="good">Nouveau vaisseau de départ : ${esc(SHIPS[m].name)}</b>`);
+  return notes.length ? `<p class="career">${notes.join('<br>')}</p>` : '';
+}
+
+function shipPicker() {
+  return `<div class="ships">${Object.entries(SHIPS)
+    .map(([id, d]) => {
+      const ok = isUnlocked(profile, id);
+      return `<button data-ship="${id}" class="${id === shipChoice ? 'sel' : ''}" ${ok ? '' : 'disabled'} title="${esc(ok ? d.desc : d.unlock)}">
+        <b>${esc(d.name)}</b><span class="muted">${ok ? `${d.range} al · ${d.fuel} t · coque ${d.hull}` : 'Verrouillé'}</span></button>`;
+    })
+    .join('')}</div>`;
+}
+
+function codexSummary() {
+  const total = Object.keys(CODEX).length;
+  const known = Object.keys(profile.codex).filter((k) => CODEX[k]);
+  const cats = {};
+  for (const [k, e] of Object.entries(CODEX)) (cats[e.cat] ||= []).push(profile.codex[k] ? esc(e.name) : '???');
+  const lore = Object.entries(KNOWLEDGE).map(([k, d]) => `<li>${d.name} : ${profile.knowledge[k]}/${d.max}${Object.entries(d.tiers).filter(([t]) => profile.knowledge[k] >= t).map(([, txt]) => `<br><span class="muted">${esc(txt)}</span>`).join('')}</li>`).join('');
+  return `<details><summary>Codex et savoir (${known.length}/${total})</summary><ul>${lore}
+    ${Object.entries(cats).map(([c, l]) => `<li><b>${esc(c)}</b> : ${l.join(', ')}</li>`).join('')}
+    <li class="muted">${profile.runs} partie(s), ${profile.victories} arrivée(s), ${profile.landings} atterrissage(s).</li></ul></details>`;
 }
 
 function titleCard() {
@@ -705,14 +771,16 @@ function titleCard() {
     <div class="kicker">Roguelite d'exploration spatiale</div>
     <div class="logo-big">It's Dangerous<span>Out There</span></div>
     <p class="motto">« La destination est certaine. Le voyage ne l'est jamais. »</p>
-    <p>Rejoignez <b>${esc(state.galaxy.destination.name)}</b>, à ${Math.round(state.galaxy.destination.dist)} années-lumière, à bord d'un Mandalay. Carburant, coque et énergie sont comptés.</p>
+    <p>Rejoignez <b>${esc(state.galaxy.destination.name)}</b>, à ${Math.round(state.galaxy.destination.dist)} années-lumière, à bord d'un ${esc(state.ship.name)}. Carburant, coque et énergie sont comptés.</p>
+    ${shipPicker()}
     <div class="choices"><button class="primary" data-act="start">${icon('takeoff')}Décoller${kbd('Entrée')}</button></div>
     <details><summary>Comment jouer</summary><ul>
       <li>Scannez chaque système ${kbd('A')} et examinez les corps (clic ou ${kbd('←')}${kbd('→')}).</li>
-      <li>Écopez les étoiles KGBFOAM ${kbd('E')} pour refaire le plein.</li>
+      <li>Écopez les étoiles KGBFOAM ${kbd('E')} : plus vous approchez, plus vous écopez, plus vous chauffez.</li>
       <li>Posez-vous ${kbd('L')} pour récolter des matériaux, puis réparez et améliorez ${kbd('Y')}.</li>
       <li>Ouvrez la navigation ${kbd('N')}, choisissez une étoile, sautez ${kbd('Entrée')}.</li>
     </ul></details>
+    ${codexSummary()}
     <p class="gallery"><a href="galerie.html">Galerie des 500 fonds</a></p></div>`;
 }
 
@@ -732,7 +800,16 @@ function update() {
   if (state.phase === 'system' && view.scene === 'surface') view.scene = 'system';
   if ((state.phase === 'victory' || state.phase === 'gameover') && !isCinematic()) view.scene = 'end';
   if (view.mode === 'nav' && state.phase !== 'system') view.mode = 'system';
-  if (view.scene !== 'title') pushToasts();
+  if (view.scene !== 'title') {
+    pushToasts();
+    view.unlocked.push(...absorbRun(profile, state));
+    const json = JSON.stringify(profile);
+    if (json !== profileSaved) {
+      profileSaved = json;
+      saveProfile(profile);
+    }
+  }
+  if (view.scoopPick && !G.canScoop(state)) view.scoopPick = false;
   renderTop();
 
   const overlay = $('#overlay');
@@ -748,6 +825,9 @@ function update() {
   } else if (state.phase === 'event' && !isCinematic()) {
     overlay.hidden = false;
     overlay.innerHTML = eventCard();
+  } else if (view.scoopPick) {
+    overlay.hidden = false;
+    overlay.innerHTML = scoopCard();
   }
 
   const showNav = view.mode === 'nav' && view.scene === 'system' && state.phase === 'system';
@@ -820,7 +900,10 @@ function act(name) {
       break;
     }
     case 'scoop':
-      if (G.scoop(state)) view.scoopUntil = performance.now() / 1000 + 1.5;
+      view.scoopPick = G.canScoop(state);
+      break;
+    case 'scoopCancel':
+      view.scoopPick = false;
       break;
     case 'boost':
       G.boost(state);
@@ -881,6 +964,20 @@ document.addEventListener('click', (e) => {
     G.resolveChoice(state, Number(d.choice));
     return update();
   }
+  if (d.scoop) {
+    view.scoopPick = false;
+    if (G.scoop(state, d.scoop)) view.scoopUntil = performance.now() / 1000 + 1.5;
+    if (state.phase === 'gameover') return setScene('end');
+    return update();
+  }
+  if (d.ship) {
+    shipChoice = d.ship;
+    profile.lastShip = d.ship;
+    saveProfile(profile);
+    state = G.createGame(state.seed, gameOptions(profile, shipChoice));
+    view.state = state;
+    return update();
+  }
   if (d.synth) {
     G.synthesize(state, d.synth);
     return update();
@@ -926,9 +1023,10 @@ document.addEventListener('keydown', (e) => {
     if (k === 'r') press('#overlay [data-act="retry"]');
     return;
   }
-  if (state.phase === 'event') {
+  if (state.phase === 'event' || view.scoopPick) {
     if (k === 'Enter') press('#overlay [data-act="close"]');
-    if (/^[1-9]$/.test(k)) press(`#overlay [data-choice="${Number(k) - 1}"]`);
+    if (k === 'Escape') press('#overlay [data-act="scoopCancel"]');
+    if (/^[1-9]$/.test(k)) press(`#overlay [data-n="${k}"]`);
     return;
   }
   if (k === 'v' || k === 'j') {

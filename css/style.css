@@ -782,6 +782,19 @@ button > .ico:first-child { margin-right: 6px; }
 .title-card li::marker { color: var(--violet); }
 .title-card .gallery { margin: 14px 0 0; font-size: 0.9em; }
 
+/* Choix du vaisseau de départ (débloqués d'une partie à l'autre) */
+.ships { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 0 0 12px; }
+.ships button { display: grid; gap: 0; padding: 2px 6px; text-align: center; line-height: 1.2; }
+.ships button .muted { font-size: 0.78em; }
+.ships button.sel { border-image-source: var(--f-btn-hover); color: var(--accent-hi); }
+.ships button:disabled b { color: var(--faint); }
+
+/* Options d'événement débloquées par le savoir */
+.card .choices button.lore { color: var(--violet); }
+.card .choices .cost .bad { color: var(--bad); }
+.card .choices .cost .good { color: var(--good); }
+.end .career { color: var(--violet); font-size: 0.9em; }
+
 .end { text-align: center; }
 .end .stats { display: grid; grid-template-columns: 1fr auto; gap: 4px 20px; text-align: left; max-width: 380px; margin: 12px auto 14px; }
 .end .stats span:nth-child(odd) { color: var(--muted); }

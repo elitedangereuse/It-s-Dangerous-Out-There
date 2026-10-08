@@ -137,6 +137,18 @@ Effets de l'état des modules :
 - Fabriquer : cellules d'énergie, injections FSD.
 - Améliorer : blindage renforcé, réservoir supplémentaire, scanner calibré,
   booster FSD gardien (nécessite un plan trouvé dans des ruines gardiennes).
+- Colmater le réservoir : n'apparaît que si le réservoir fuit.
+
+**Écopage à risque** : le joueur choisit son approche de l'étoile. *Loin* :
+peu de carburant, aucun danger. *Normale* : le compromis. *Au ras de l'étoile* :
+jusqu'à 1,7 fois plus de carburant, mais une forte chance de surchauffe qui
+abîme coque et modules (plus l'étoile est chaude, plus le risque monte). La
+fenêtre d'écopage affiche la fourchette de carburant et le risque.
+
+**Sources garanties** (règle de génération invisible) : après trois systèmes
+sans monde métallique où se poser, tous les systèmes proposés en contiennent
+un (de quoi réparer coque et modules) ; après deux systèmes sans étoile
+écopable, le saut le moins cher mène à une étoile écopable.
 
 ### 4.6 Régions et événements
 
@@ -150,6 +162,34 @@ La carte contient des **régions** générées pour chaque partie :
 Les événements sont des **saynètes à choix** (texte + 2-3 options, parfois
 conditionnées par l'énergie, le carburant ou des matériaux). Ils sont le
 moteur des prises de risque et de l'identité du jeu.
+
+**Événements de milieu de partie** (entre 25 % et 80 % du trajet, chacun au
+plus une fois, au moins un garanti avant 60 %) :
+
+- **Vaisseau abandonné** (Diamondback Explorer, Krait Phantom ou Asp Explorer) :
+  changer de vaisseau garde la soute mais perd les améliorations installées,
+  et le nouveau vaisseau arrive abîmé. Ou le démonter pour pièces.
+- **Capsule de survie** : un passager (ingénieure, navigateur ou exobiologiste)
+  apporte un atout, use le support vital plus vite (−3 % par saut) et rapporte
+  un gros bonus de données à l'arrivée.
+- **Fuite du réservoir** : colmater tout de suite, sacrifier 6 t de capacité,
+  ou continuer en perdant 1,5 t à chaque saut jusqu'à la synthèse d'une rustine.
+
+### 4.6 bis Méta-progression : du savoir, pas de la puissance
+
+Le profil du commandant est conservé dans le navigateur d'une partie à l'autre :
+
+- **Glyphes gardiens** et **signaux thargoïdes** se déchiffrent à chaque
+  rencontre (5 de chaque). Certains paliers débloquent des réponses nouvelles :
+  lire le plan gardien sans réveiller la sentinelle, répondre au chant d'une
+  sonde, imiter le signal qui calme une hyperdiction.
+- **Codex** des découvertes (phénomènes, xéno, étoiles rares, planètes rares,
+  genres biologiques) ; la première découverte de toute la carrière rapporte
+  des données. Consultable depuis l'écran titre.
+- **Vaisseaux de départ** façon FTL : Mandalay d'office ; Diamondback Explorer
+  après une première arrivée ; Krait Phantom en en pilotant un récupéré ;
+  Asp Explorer après 25 atterrissages cumulés. Chacun échange portée,
+  réservoir et coque, aucun n'est strictement meilleur.
 
 ### 4.7 Lore Elite Dangerous utilisé
 
@@ -187,7 +227,6 @@ Le prototype dans ce dépôt implémente la boucle complète :
 
 - Équilibrage (longueur de partie, rareté des matériaux).
 - Plus d'événements et de chaînes narratives sur plusieurs systèmes.
-- Choix du vaisseau de départ (Mandalay, Asp Explorer, Diamondback, Krait Phantom…).
+- Sprites propres à chaque vaisseau (le Mandalay est utilisé pour tous).
 - Son et musique d'ambiance.
-- Codex consultable des découvertes, méta-progression entre les parties.
 - Sauvegarde de la partie en cours.
