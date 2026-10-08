@@ -31,13 +31,14 @@ export const BODY_TYPES = {
   elw: { name: 'Monde de type terrestre', landable: false, palette: ['#0f3a7a', '#2f8a4a', '#e8f4ff'], size: [7, 10], weight: 1, value: 60 },
 };
 
+// Chaque matériau a sa couleur et son icône (main.js) pour le reconnaître d'un coup d'œil.
 export const MATERIALS = {
-  iron: { name: 'Fer', short: 'Fe' },
-  nickel: { name: 'Nickel', short: 'Ni' },
-  carbon: { name: 'Carbone', short: 'C' },
-  vanadium: { name: 'Vanadium', short: 'V' },
-  germanium: { name: 'Germanium', short: 'Ge' },
-  polonium: { name: 'Polonium', short: 'Po', rare: true },
+  iron: { name: 'Fer', short: 'Fe', color: '#ff7f5e' },
+  nickel: { name: 'Nickel', short: 'Ni', color: '#c3cde6' },
+  carbon: { name: 'Carbone', short: 'C', color: '#ffd36e' },
+  vanadium: { name: 'Vanadium', short: 'V', color: '#6fe08f' },
+  germanium: { name: 'Germanium', short: 'Ge', color: '#62d6ff' },
+  polonium: { name: 'Polonium', short: 'Po', color: '#c98bff', rare: true },
 };
 
 export const MODULES = {

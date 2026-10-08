@@ -23,7 +23,7 @@
   --good: #7df0b4;
   --bad: #ff6b81;
   --event: #ffd36e;
-  --font: 'Pixelify Sans', 'VT323', ui-monospace, monospace;
+  --font: 'DotGothic16', 'Pixelify Sans', 'VT323', ui-monospace, monospace;
   --mono: 'VT323', ui-monospace, monospace;
   --topbar: 76px;
   --dock: 64px;
@@ -645,10 +645,21 @@ button > .ico:first-child { margin-right: 6px; }
   clip-path: var(--step2);
   font-variant-numeric: tabular-nums;
 }
-.mats div span:first-child { color: var(--cyan); font-weight: 600; }
+.mats div span:first-child { color: var(--mat, var(--cyan)); font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+.mats div span:first-child .ico { width: 14px; height: 14px; vertical-align: 0; }
+.mats div { box-shadow: inset 3px 0 0 var(--mat, transparent); }
 .mats div span:last-child { font-weight: 600; }
 .mats div.zero { background: rgba(30, 32, 70, 0.25); color: var(--faint); }
-.mats div.zero span:first-child { color: var(--faint); }
+.mats div.zero span:first-child { color: color-mix(in srgb, var(--mat) 40%, var(--faint)); }
+.mats div.zero { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--mat) 30%, transparent); }
+
+/* Matériau en ligne : icône et symbole dans la couleur propre au matériau. */
+.mat { color: var(--mat); font-weight: 600; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; }
+.mat .ico { width: 14px; height: 14px; vertical-align: 0; }
+.mat + .mat { margin-left: 6px; }
+.mat-line .mat { font-weight: 500; }
+.mat.miss { color: var(--bad); text-decoration: line-through; text-decoration-thickness: 2px; }
+.mat.miss .ico { color: var(--mat); opacity: 0.55; }
 .seed { color: var(--faint); font-size: 0.85em; margin-top: 14px; }
 
 /* Plan de vol (écran titre) */
@@ -708,10 +719,9 @@ button > .ico:first-child { margin-right: 6px; }
 .recipe { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 10px; padding: 0 4px; }
 .recipe > span:first-child { font-weight: 500; }
 .recipe .k { color: var(--cyan); white-space: nowrap; font-size: 0.88em; }
-.recipe .k .miss { color: var(--bad); }
 .recipe .c { grid-column: 1 / -1; color: var(--muted); font-size: 0.8em; line-height: 1.25; }
 .recipe:disabled .k { color: var(--faint); }
-.recipe:disabled .k .miss { color: color-mix(in srgb, var(--bad) 60%, var(--faint)); }
+.recipe:disabled .k .mat { opacity: 0.75; }
 
 /* ---------- Cartes (événements, fin, titre) ---------- */
 

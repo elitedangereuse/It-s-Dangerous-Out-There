@@ -176,6 +176,13 @@ const ICON_BITMAPS = {
   star: ['...#....', '...#....', '.#####..', '#######.', '.#####..', '...#....', '...#....', '........'],
   alert: ['...##...', '..####..', '..#..#..', '.##..##.', '.##..##.', '########', '###..###', '########'],
   back: ['........', '..#.....', '.##.....', '#######.', '.##.....', '..#.....', '........', '........'],
+  // Matériaux : lingot, pièce percée, hexagone de graphène, cristaux, puce, trèfle radioactif.
+  iron: ['........', '........', '..####..', '.######.', '########', '########', '........', '........'],
+  nickel: ['..####..', '.######.', '###..###', '##....##', '##....##', '###..###', '.######.', '..####..'],
+  carbon: ['...##...', '.##..##.', '#......#', '#..##..#', '#..##..#', '#......#', '.##..##.', '...##...'],
+  vanadium: ['...#....', '..###...', '..###.#.', '#.###.#.', '#.###.##', '#.###.##', '##.#.###', '########'],
+  germanium: ['..#..#..', '.######.', '##....##', '.#.##.#.', '##.##.##', '.#....#.', '.######.', '..#..#..'],
+  polonium: ['.##..##.', '###..###', '###..###', '...##...', '...##...', '..####..', '..####..', '........'],
 };
 const ICON_PATHS = Object.fromEntries(
   Object.entries(ICON_BITMAPS).map(([k, rows]) => {
@@ -189,6 +196,10 @@ const ICON_PATHS = Object.fromEntries(
 const icon = (name) => `<svg class="ico ${name}" viewBox="0 0 8 8" aria-hidden="true"><path d="${ICON_PATHS[name]}"/></svg>`;
 
 const GAUGE_ICONS = { fuel: 'fuel', hull: 'hull', energy: 'bolt' };
+
+// Matériau en ligne : icône et symbole dans sa couleur (n = quantité, facultative).
+const mat = (k, n, cls = '') => `<span class="mat ${cls}" style="--mat:${MATERIALS[k].color}" title="${MATERIALS[k].name}">${n != null ? `${n} ` : ''}${icon(k)}${MATERIALS[k].short}</span>`;
+const matNames = (list) => list.map((k) => `<span class="mat" style="--mat:${MATERIALS[k].color}">${icon(k)}${MATERIALS[k].name}</span>`).join(' ');
 
 function gauge(cls, label, v, max, unit = '') {
   const low = v / max < 0.25;
@@ -272,8 +283,8 @@ function bodyDetail(b) {
       if (b.feature) chips.push(`<span class="chip event">${esc(G.featureLabel(b.feature))}</span>`);
       if (b.rings) chips.push('<span class="chip">Anneaux</span>');
       if (bodyAtmosphere(b)) chips.push('<span class="chip cyan">Atmosphère ténue</span>');
-      const mats = b.mats.length ? b.mats.map((m) => MATERIALS[m].name).join(', ') : '—';
-      text += `<p class="muted">Matériaux : ${mats}</p>`;
+      const mats = b.mats.length ? matNames(b.mats) : '—';
+      text += `<p class="muted mat-line">Matériaux : ${mats}</p>`;
     } else {
       if (b.hint) chips.push('<span class="chip event">Signal détecté</span>');
       text += '<p class="muted">Un scan détaillé révèle matériaux, signaux et anomalies.</p>';
@@ -323,7 +334,7 @@ function surfacePanel() {
     <p>${bodyAtmosphere(b) ? 'Le commandant descend la rampe. Le vent siffle contre la visière.' : 'Le commandant descend la rampe. Le silence est total.'}</p>
     ${sf.analyzed ? `<h3>Relevés</h3><div class="chips">${found.join('') || '<span class="chip">Rien de notable</span>'}</div>` : '<div class="empty">Analysez la surface pour repérer la vie, les évents et les anomalies.</div>'}
     <h3>Matériaux possibles</h3>
-    <p class="muted">${b.mats.map((m) => MATERIALS[m].name).join(', ') || '—'}</p>`;
+    <p class="muted mat-line">${matNames(b.mats) || '—'}</p>`;
 }
 
 // --- Panneau : navigation ---
@@ -429,7 +440,7 @@ function drawNavmap() {
   ctx.arc(cx, cy, range * scale, 0, Math.PI * 2);
   ctx.stroke();
   ctx.setLineDash([]);
-  ctx.font = '15px "Pixelify Sans", VT323, monospace';
+  ctx.font = '15px DotGothic16, "Pixelify Sans", VT323, monospace';
   ctx.fillStyle = 'rgba(111, 211, 255, 0.7)';
   ctx.fillText(`portée ${range.toFixed(1)} al`, cx + range * scale * 0.72, cy - range * scale * 0.72);
   // Destination
@@ -539,7 +550,7 @@ function synthPanel() {
         .map((r) => {
           const owned = r.once && state.upgrades[r.id];
           const locked = r.needs && !state.flags[r.needs];
-          const cost = Object.entries(r.cost).map(([m, n]) => `<span class="${(have[m] || 0) < n ? 'miss' : ''}">${n} ${MATERIALS[m].short}</span>`).join(' + ');
+          const cost = Object.entries(r.cost).map(([m, n]) => mat(m, n, (have[m] || 0) < n ? 'miss' : '')).join(' ');
           return `<button class="recipe" data-synth="${r.id}" ${G.canSynthesize(state, r) ? '' : 'disabled'}>
             <span>${r.name}${owned ? ` <span class="good">${icon('check')}</span>` : ''}</span><span class="k">${cost}</span>
             <span class="c">${locked ? 'Plan requis (ruines gardiennes)' : owned ? 'Déjà installé' : r.desc}</span></button>`;
@@ -551,7 +562,7 @@ function synthPanel() {
 function matsGrid() {
   const s = state.ship;
   return `<div class="mats">${Object.entries(MATERIALS)
-    .map(([k, m]) => `<div class="${s.materials[k] ? '' : 'zero'}" title="${m.name}"><span>${m.short}</span><span>${s.materials[k] || 0}</span></div>`)
+    .map(([k, m]) => `<div class="${s.materials[k] ? '' : 'zero'}" style="--mat:${m.color}" title="${m.name}"><span>${icon(k)}${m.short}</span><span>${s.materials[k] || 0}</span></div>`)
     .join('')}</div>`;
 }
 
@@ -677,7 +688,7 @@ function costLabel(cost = {}) {
   const parts = [];
   if (cost.energy) parts.push(`${cost.energy}${icon('bolt')}`);
   if (cost.fuel) parts.push(`${cost.fuel} t${icon('fuel')}`);
-  if (cost.mats) parts.push(Object.entries(cost.mats).map(([m, n]) => `${n} ${MATERIALS[m].short}`).join(' + '));
+  if (cost.mats) parts.push(Object.entries(cost.mats).map(([m, n]) => mat(m, n)).join(' '));
   return parts.join(', ');
 }
 
