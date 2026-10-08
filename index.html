@@ -2,9 +2,14 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>It's Dangerous Out There</title>
   <meta name="theme-color" content="#080a2a">
+  <!-- Sur téléphone et tablette, le jeu se joue en paysage uniquement (voir .rotate et le manifeste). -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="description" content="Roguelite d'exploration spatiale en pixel art dans l'univers d'Elite Dangerous.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -27,12 +32,14 @@
 
   <main class="layout">
     <section class="stage-col">
+      <div class="stage-wrap">
       <div class="stage" id="stage">
         <canvas id="screen" width="640" height="360" aria-label="Vue du vaisseau"></canvas>
         <canvas id="navmap" class="navmap" width="640" height="360" hidden aria-label="Carte de navigation"></canvas>
         <div id="tip" class="tip" hidden></div>
         <ol id="toasts" class="toasts" aria-live="polite"></ol>
         <div id="overlay" class="overlay" hidden></div>
+      </div>
       </div>
       <nav id="dock" class="dock" aria-label="Actions"></nav>
     </section>
@@ -46,6 +53,14 @@
       <section id="panel" class="panel" role="tabpanel"></section>
     </aside>
   </main>
+
+  <div class="rotate" role="alert">
+    <svg class="phone" viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges">
+      <path fill="#a993ff" d="M5 1h6v1h1v12h-1v1H5v-1H4V2h1zM5 3v9h6V3z"/>
+      <path fill="#ffb054" d="M7 13h2v1H7z"/>
+    </svg>
+    <p><b>Tournez votre appareil</b><br>It's Dangerous Out There se joue à l'horizontale.</p>
+  </div>
 
   <noscript>Ce jeu nécessite JavaScript.</noscript>
   <script type="module" src="src/main.js"></script>

@@ -80,7 +80,7 @@ function frame(now) {
   view.t = t;
   if (view.scene === 'surface' || view.scene === 'landing' || view.scene === 'takeoff') view.body = G.currentBody(state) || view.body;
   renderer.render(view, t);
-  if (view.hoverBody) placeTip();
+  if (view.hoverBody || (touchUI.matches && view.selectedBodyId)) placeTip();
   const dur = { jump: JUMP_DURATION, landing: LANDING_DURATION, takeoff: TAKEOFF_DURATION }[view.scene];
   if (dur && view.sceneTime >= dur) finishCinematic();
   requestAnimationFrame(frame);
@@ -118,9 +118,17 @@ canvas.addEventListener('mouseleave', () => {
   placeTip();
 });
 
+// Écran tactile : pas de survol, la bulle suit donc le corps sélectionné.
+const touchUI = matchMedia('(hover: none)');
+// Téléphone en paysage (même requête que dans style.css) : les actions du corps choisi passent
+// dans la barre d'actions, toujours visible, au lieu du bas du panneau.
+const phoneUI = matchMedia('(orientation: landscape) and (max-height: 540px)');
+phoneUI.addEventListener('change', () => view && update());
+
 function placeTip() {
   const tip = $('#tip');
-  const l = view.hoverBody && view.layout?.find((x) => x.body.id === view.hoverBody);
+  const id = view.hoverBody || (touchUI.matches ? view.selectedBodyId : null);
+  const l = id && view.layout?.find((x) => x.body.id === id);
   if (!l || !systemInteractive()) {
     tip.hidden = true;
     return;
@@ -291,8 +299,8 @@ function bodyDetail(b) {
     }
     if (b.landed) chips.push('<span class="chip cyan">Visité</span>');
   }
-  return `<div class="detail">${text}<div class="chips">${chips.join('')}</div>
-    <div class="actions">${bodyActions(b).map(actionButton).join('')}</div></div>`;
+  const acts = phoneUI.matches ? '' : `<div class="actions">${bodyActions(b).map(actionButton).join('')}</div>`;
+  return `<div class="detail">${text}<div class="chips">${chips.join('')}</div>${acts}</div>`;
 }
 
 function systemPanel() {
@@ -376,14 +384,14 @@ function navPanel() {
     <h2>Navigation</h2>
     <p class="sub">Portée ${state.effectiveRange.toFixed(1)} al · ${round1(state.ship.fuel)} t de carburant</p>
     <div class="cands">${list}</div>
-    <p class="legend">${icon('fuel')} étoile écopable · ${icon('bolt')} jet de suralimentation · en vert : distance gagnée vers la destination. Double-clic pour sauter directement.</p>`;
+    <p class="legend">${icon('fuel')} étoile écopable · ${icon('bolt')} jet de suralimentation · en vert : distance gagnée vers la destination. ${touchUI.matches ? '' : 'Double-clic pour sauter directement.'}</p>`;
 }
 
 function jumpAction(sel) {
   return {
     act: 'jump',
     icon: icon('jump'),
-    label: `Sauter vers ${sel.c.name}`,
+    label: phoneUI.matches ? 'Sauter' : `Sauter vers ${sel.c.name}`,
     cost: sel.check.ok ? `${sel.fuel} t` : '',
     why: sel.check.ok ? '' : sel.check.reason,
     disabled: !sel.check.ok,
@@ -673,9 +681,14 @@ function dockActions() {
   }
   const sys = state.system;
   const star = STAR_CLASSES[sys.star];
-  const acts = [
+  const acts = [];
+  if (phoneUI.matches) {
+    const b = sys.bodies.find((x) => x.id === view.selectedBodyId);
+    acts.push(...bodyActions(b));
+  }
+  if (!(phoneUI.matches && sys.autoScanned)) acts.push(
     { act: 'auto', icon: icon('radar'), label: 'Scan du système', cost: `${G.COSTS.autoScan}${icon('bolt')}`, disabled: sys.autoScanned || state.ship.energy < G.COSTS.autoScan, why: sys.autoScanned ? 'Déjà fait' : '', inlineWhy: false, key: 'A', primary: !sys.autoScanned },
-  ];
+  );
   if (star.scoopable) acts.push({ act: 'scoop', icon: icon('fuel'), label: sys.scooped ? 'Écopage fait' : 'Écoper', disabled: !G.canScoop(state), key: 'E' });
   if (star.boost) acts.push({ act: 'boost', icon: icon('bolt'), label: `Jet ×${star.boost}`, cost: 'dégâts', disabled: !G.canBoost(state), key: 'B' });
   acts.push({ sep: true }, synth, { act: 'nav', icon: icon('compass'), label: 'Navigation', key: 'N', primary: sys.autoScanned });
@@ -780,12 +793,12 @@ function codexSummary() {
 }
 
 function titleCard() {
-  return `<div class="card title-card">
+  return `<div class="card title-card"><div class="tc-intro">
     <div class="kicker">Roguelite d'exploration spatiale</div>
     <div class="logo-big">It's Dangerous<span>Out There</span></div>
     <p class="motto">« La destination est certaine. Le voyage ne l'est jamais. »</p>
-    <p>Rejoignez <b>${esc(state.galaxy.destination.name)}</b>, à ${Math.round(state.galaxy.destination.dist)} années-lumière, à bord d'un ${esc(state.ship.name)}. Carburant, coque et énergie sont comptés.</p>
-    ${shipPicker()}
+    <p>Rejoignez <b>${esc(state.galaxy.destination.name)}</b>, à ${Math.round(state.galaxy.destination.dist)} années-lumière, à bord d'un ${esc(state.ship.name)}. Carburant, coque et énergie sont comptés.</p></div>
+    <div class="tc-play">${shipPicker()}
     <div class="choices"><button class="primary" data-act="start">${icon('takeoff')}Décoller${kbd('Entrée')}</button></div>
     <details><summary>Comment jouer</summary><ul>
       <li>Scannez chaque système ${kbd('A')} et examinez les corps (clic ou ${kbd('←')}${kbd('→')}).</li>
@@ -794,7 +807,7 @@ function titleCard() {
       <li>Ouvrez la navigation ${kbd('N')}, choisissez une étoile, sautez ${kbd('Entrée')}.</li>
     </ul></details>
     ${codexSummary()}
-    <p class="gallery"><a href="galerie.html">Galerie des 500 fonds</a></p></div>`;
+    <p class="gallery"><a href="galerie.html">Galerie des 500 fonds</a></p></div></div>`;
 }
 
 // ---------- Mise à jour ----------
@@ -886,7 +899,19 @@ function update() {
 
 // ---------- Actions ----------
 
+// Sur téléphone et tablette, le départ passe en plein écran et verrouille le paysage
+// quand le navigateur le permet (Android ; iPhone ignore, l'écran « Tournez » prend le relais).
+function goFullscreenLandscape() {
+  if (!matchMedia('(pointer: coarse)').matches || document.fullscreenElement) return;
+  const el = document.documentElement;
+  if (!el.requestFullscreen) return;
+  el.requestFullscreen({ navigationUI: 'hide' })
+    .then(() => screen.orientation?.lock?.('landscape'))
+    .catch(() => {});
+}
+
 function start() {
+  goFullscreenLandscape();
   newGame(state.seed);
 }
 

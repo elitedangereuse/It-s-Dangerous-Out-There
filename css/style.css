@@ -60,7 +60,7 @@ html, body {
   line-height: 1.35;
 }
 
-html { background: var(--bg-0); }
+html { background: var(--bg-0); touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
 body {
   display: flow-root;
@@ -311,6 +311,8 @@ button > .ico:first-child { margin-right: 6px; }
   padding: 14px 16px 14px;
   height: calc(100dvh - var(--topbar));
 }
+/* .stage-wrap ne sert qu'au téléphone en paysage (conteneur de taille pour la scène). */
+.stage-wrap { display: contents; }
 .stage-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; align-items: center; justify-content: center; }
 
 .stage {
@@ -838,7 +840,9 @@ button > .ico:first-child { margin-right: 6px; }
   .gauge .delta { display: none; }
 }
 
-@media (max-width: 900px) {
+/* Écran étroit en hauteur suffisante (fenêtre de bureau rétrécie). Les téléphones et tablettes
+   tenus en portrait voient l'écran « Tournez votre appareil », en paysage la mise en page dédiée plus bas. */
+@media (max-width: 900px) and (min-height: 541px) {
   html, body { font-size: 16px; }
   .topbar { height: auto; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 2px 4px; margin: 10px 12px 0; }
   .logo { display: none; }
@@ -870,7 +874,7 @@ button > .ico:first-child { margin-right: 6px; }
   .title-card .logo-big { font-size: 32px; }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 480px) and (min-height: 541px) {
   .route .stats { padding: 2px 6px; }
   .route .track-wrap { flex: 1 1 40px; min-width: 40px; }
   .route .end.muted { max-width: 70px; }
@@ -878,6 +882,194 @@ button > .ico:first-child { margin-right: 6px; }
   .gauge .lbl { justify-content: flex-start; }
   .gauges { gap: 8px; }
   .gauge { column-gap: 6px; }
+}
+
+/* ---------- Téléphone en paysage ----------
+   Tout tient dans l'écran, sans défilement de page : barre d'état et scène à gauche,
+   actions puis panneau à droite (seul le panneau défile). La scène reste toujours visible,
+   donc choisir un corps ou une destination montre aussitôt le résultat. */
+
+@media (orientation: landscape) and (max-height: 540px) {
+  :root {
+    --topbar: 40px;
+    --side: clamp(210px, 31vw, 300px);
+    --pad-t: max(6px, env(safe-area-inset-top));
+    --pad-b: max(6px, env(safe-area-inset-bottom));
+    --pad-l: max(8px, env(safe-area-inset-left));
+    --pad-r: max(8px, env(safe-area-inset-right));
+  }
+  html, body { font-size: 14px; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    min-height: 0;
+    height: 100dvh;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--side);
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-areas: 'top dock' 'stage dock' 'stage tabs' 'stage panel';
+    gap: 6px 10px;
+    padding: var(--pad-t) var(--pad-r) var(--pad-b) var(--pad-l);
+  }
+  .layout, .stage-col, .side { display: contents; }
+  .stage-wrap { grid-area: stage; display: grid; place-items: center; min-width: 0; min-height: 0; container-type: size; }
+
+  /* Barre d'état compacte : progression et jauges sur une ligne */
+  .topbar {
+    grid-area: top;
+    height: var(--topbar);
+    margin: 0;
+    padding: 0 4px;
+    gap: 10px;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .logo { display: none; }
+  .route { gap: 6px; font-size: 0.9em; }
+  .route .end.muted { display: none; }
+  .route .track-wrap { flex: 1 1 40px; min-width: 30px; margin: 0 4px; }
+  .route .stats { padding: 1px 6px; }
+  .gauges { gap: 10px; }
+  .gauge { width: 84px; grid-template-columns: auto auto minmax(20px, 1fr); column-gap: 5px; }
+  .gauge > .ico { grid-row: auto; }
+  .gauge .lbl { font-size: 0.9em; }
+  .gauge .lbl span:first-child, .gauge .delta { display: none; }
+  .gauge .track { margin-top: 0; }
+
+  /* Scène : la plus grande possible dans la hauteur restante */
+  .stage {
+    margin: 0;
+    width: min(calc(100cqw - 12px), calc((100cqh - 12px) * 16 / 9));
+    box-shadow: 0 0 0 6px rgba(4, 5, 24, 0.2), 0 0 40px rgba(110, 100, 255, 0.2);
+  }
+  .stage::after { inset: -6px; border-width: 8px; border-image: var(--f-stage) 6 / 8px stretch; }
+  .tip { font-size: 0.8em; }
+  .toasts { left: 6px; bottom: 6px; gap: 4px; max-width: 75%; }
+  .toasts li { font-size: 0.8em; padding: 2px 8px 3px; }
+  .toasts li:nth-last-child(n + 3) { display: none; }
+
+  /* Colonne de droite : actions, onglets, panneau */
+  .dock {
+    grid-area: dock;
+    min-height: 0;
+    align-self: start;
+    justify-content: stretch;
+    align-content: start;
+    gap: 4px;
+  }
+  .dock button {
+    flex: 1 1 auto;
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 38px;
+    padding: 0 4px;
+    font-size: 0.9em;
+    line-height: 1.2;
+  }
+  .dock button .why { flex-basis: 100%; }
+  .dock button > .ico:first-child { margin-right: 4px; }
+  .dock button .cost { margin-left: 6px; }
+  .dock .sep { display: none; }
+  .dock .hint { padding: 4px 8px; font-size: 0.9em; }
+  .tabs { grid-area: tabs; }
+  .tabs button { padding: 4px 2px 5px; font-size: 0.9em; }
+  .panel { grid-area: panel; padding: 4px 6px 8px; max-height: none; }
+  .panel h2 { font-size: 1.15em; }
+  .panel h3 { margin: 12px 0 6px; }
+
+  /* Fenêtres (titre, événements, fin) : plein écran, en deux colonnes */
+  .overlay:has(.card) { position: fixed; z-index: 20; padding: var(--pad-t) var(--pad-r) var(--pad-b) var(--pad-l); }
+  .card { padding: 6px 10px 8px; }
+  .card h2 { font-size: 1.25em; }
+  .card p { margin-bottom: 8px; }
+  .card .choices button { min-height: 38px; }
+
+  .title-card {
+    max-width: 780px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 20px;
+    align-items: center;
+  }
+  .title-card .tc-play { padding-top: 4px; }
+  .title-card .logo-big { font-size: 30px; margin-bottom: 8px; }
+  .title-card .motto { margin-bottom: 8px; }
+  .title-card .choices { max-width: none; width: 100%; }
+  .title-card details { margin-top: 8px; }
+  .title-card .gallery { margin-top: 8px; }
+
+  .event-card {
+    max-width: 780px;
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    grid-auto-flow: row dense;
+    column-gap: 18px;
+    align-content: start;
+  }
+  .event-card > * { grid-column: 1; }
+  .event-card > .eyebrow { justify-self: start; }
+  .event-card > .choices { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+  .event-card > .outcome { grid-column: 2; grid-row: 1 / span 2; }
+  .event-card > .outcome + .choices { grid-row: 3; align-self: start; }
+
+  .end {
+    max-width: 780px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-auto-flow: row dense;
+    column-gap: 20px;
+    align-content: start;
+  }
+  .end > * { grid-column: 1; }
+  .end > .eyebrow { justify-self: center; }
+  .end > .stats { grid-column: 2; grid-row: 1 / span 5; align-self: center; margin: 0; }
+  .end > .choices { grid-column: 1 / -1; }
+}
+
+/* Écran plus proche du 16:9 (iPhone SE, vieux Android) : la scène est limitée par la largeur,
+   la barre d'actions passe donc sous la scène et le panneau prend toute la hauteur à droite. */
+@media (orientation: landscape) and (max-height: 540px) and (max-aspect-ratio: 2 / 1) {
+  :root { --side: clamp(190px, 29vw, 270px); }
+  body {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: 'top tabs' 'stage panel' 'dock panel';
+  }
+  .dock { align-self: end; justify-content: center; }
+  .dock button { flex: 0 1 auto; padding: 0 6px; }
+}
+
+@media (orientation: landscape) and (max-height: 380px) {
+  html, body { font-size: 13px; }
+  :root { --topbar: 36px; }
+  .route .track-wrap, .route .end.goal { display: none; }
+  .gauges { gap: 8px; }
+  .gauge { width: 70px; }
+  .dock { gap: 3px; }
+  .dock button { min-height: 34px; padding: 0 3px; font-size: 0.85em; }
+  .dock button .cost { margin-left: 4px; padding: 0 3px; }
+}
+
+/* ---------- Téléphone ou tablette en portrait : on demande de tourner l'appareil ---------- */
+
+.rotate { display: none; }
+@media (orientation: portrait) and (pointer: coarse) {
+  body > :not(.rotate) { display: none !important; }
+  body { min-height: 100dvh; }
+  .rotate {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 24px;
+    text-align: center;
+    color: var(--muted);
+  }
+  .rotate b { color: var(--accent-hi); font-size: 1.2em; }
+  .rotate .phone { width: 72px; height: 72px; image-rendering: pixelated; animation: tilt 2.4s var(--ease) infinite; filter: drop-shadow(0 0 12px rgba(169, 147, 255, 0.5)); }
+  @keyframes tilt { 0%, 25% { transform: rotate(0); } 55%, 100% { transform: rotate(-90deg); } }
 }
 
 @media (prefers-reduced-motion: reduce) {
