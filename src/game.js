@@ -407,7 +407,8 @@ export function autoScan(state) {
     if ((b.feature || b.bio || b.geo) && rng.chance(0.4)) b.hint = true;
     if (b.feature === 'guardian' && state.knowledge.glyphs >= 2) b.hint = true;
   }
-  log(state, `Scan automatique : ${sys.bodies.length} corps détecté(s).`, 'info');
+  log(state, `Scan du système : ${sys.bodies.length} corps détecté(s).`, 'info');
+  checkEnd(state);
   return true;
 }
 
@@ -435,6 +436,7 @@ export function manualScan(state, bodyId) {
   if (b.geo) notes.push(`${b.geo} signal(s) géologique(s)`);
   if (b.feature) notes.push(featureLabel(b.feature).toLowerCase());
   log(state, `${b.name} : ${def.name}${notes.length ? ' — ' + notes.join(', ') : ''}.`, notes.length ? 'good' : 'info');
+  checkEnd(state);
   return true;
 }
 
@@ -583,6 +585,7 @@ export function surfaceAction(state, id) {
       if (found.length) log(state, `Analyse : ${found.join(', ')} à proximité.`, 'good');
       else log(state, rng.pick(['Analyse : une plaine silencieuse, rien que de la roche et des étoiles.', 'Analyse : rien de notable. La vue, elle, est à couper le souffle.', 'Analyse : quelques cratères anciens, aucun signal.']), 'info');
       addData(state, 3, `Analyse de surface : ${b.name}`);
+      checkEnd(state);
       return true;
     }
     case 'harvest': {
@@ -613,6 +616,7 @@ export function surfaceAction(state, id) {
       addData(state, b.bio * (state.passenger === 'scientist' ? 16 : 8), `Exobiologie : ${species.join(', ')}`);
       for (const sp of species) discover(state, `bio:${sp}`);
       log(state, `Échantillons prélevés : ${species.join(', ')}.`, 'good');
+      checkEnd(state);
       return true;
     }
     case 'feature': {
@@ -690,6 +694,7 @@ export function checkEnd(state) {
   const s = state.ship;
   if (s.hull <= 0) return gameOver(state, 'La coque cède. Votre vaisseau se disloque dans le silence du vide.');
   if (s.modules.life <= 0) return gameOver(state, 'Le support vital s\'éteint. Votre voyage s\'achève ici.');
+  if (s.energy <= 0) return gameOver(state, 'Les batteries sont à plat. Plus de propulsion, plus de support vital : le vaisseau s\'éteint en silence.');
   if (state.phase !== 'system') return;
   if (s.modules.fsd <= 0 && !canSynthesize(state, RECIPES.find((r) => r.id === 'module'))) {
     return gameOver(state, 'Le FSD est détruit et vous n\'avez plus de quoi le réparer. Vous dérivez à jamais.');

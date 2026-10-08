@@ -38,6 +38,15 @@ test('le scan manuel coûte de l\'énergie et révèle le corps', () => {
   assert.ok(g.ship.energy < e);
 });
 
+test('tomber à 0 d\'énergie met fin à la partie', () => {
+  const g = createGame(7);
+  g.ship.energy = 5;
+  assert.ok(autoScan(g));
+  assert.equal(g.ship.energy, 0);
+  assert.equal(g.phase, 'gameover');
+  assert.equal(g.end.victory, false);
+});
+
 test('la synthèse consomme les matériaux', () => {
   const g = createGame(9);
   g.ship.hull = 50;
