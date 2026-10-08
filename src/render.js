@@ -406,7 +406,7 @@ export function createRenderer(canvas) {
     const sys = state.system;
     const sp = systemSpace(sys);
     // La caméra dérive très lentement : le décor vit sans gêner la lecture.
-    drawSpace(sp, t, { camX: Math.sin(t * 0.05) * 40, camY: Math.sin(t * 0.037) * 12, corners: ['haut-droite', 'bas-droite'] });
+    drawSpace(sp, t, { camX: Math.sin(t * 0.05) * 40, camY: Math.sin(t * 0.037) * 12, deco: false });
     const star = STAR_CLASSES[sys.star];
     const starX = star.radius > 20 ? 4 : 24;
     const starY = 90;
