@@ -59,11 +59,11 @@ const isCinematic = () => ['jump', 'landing', 'takeoff'].includes(view.scene);
 function finishCinematic() {
   if (view.scene === 'jump') {
     if (state.phase === 'victory' || state.phase === 'gameover') setScene('end');
-    else setScene('system', { selectedBodyId: null, scanWaveStart: null });
+    else setScene('system', { selectedBodyId: null, scanWaveStart: null, arriving: true });
   } else if (view.scene === 'landing') {
     setScene(state.phase === 'gameover' ? 'end' : 'surface', { astroX: null });
   } else if (view.scene === 'takeoff') {
-    setScene(state.phase === 'gameover' ? 'end' : 'system');
+    setScene(state.phase === 'gameover' ? 'end' : 'system', { arriving: false });
   }
 }
 
