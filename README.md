@@ -29,7 +29,7 @@ Toutes les actions sont dans la barre sous l'écran, chacune avec son raccourci.
 | Touche | Action |
 |---|---|
 | clic, `←` `→`, `1`–`9` | Sélectionner un corps du système |
-| `A` | Scan automatique |
+| `A` | Scan du système |
 | `M` | Scan détaillé du corps sélectionné |
 | `L` | Atterrir sur le corps sélectionné |
 | `E` | Écoper l'étoile (classes KGBFOAM) |

@@ -87,7 +87,7 @@ Le vaisseau émerge toujours **près de l'étoile principale**.
 
 | Mode | Coût | Révèle |
 |---|---|---|
-| 🤖 **Scan automatique** (« honk ») | Énergie faible, une fois | Tous les corps : type, atterrissable ; parfois un indice « signal détecté » |
+| 🤖 **Scan du système** (« honk ») | Énergie faible, une fois | Tous les corps : type, atterrissable ; parfois un indice « signal détecté » |
 | 🔬 **Scan manuel** (FSS) | Énergie par corps | Matériaux, signaux biologiques et géologiques, anomalies, structures artificielles, informations cachées |
 
 Le scan auto est rapide mais limité ; le scan manuel est précis mais coûte
@@ -216,7 +216,7 @@ Le prototype dans ce dépôt implémente la boucle complète :
 
 - [x] Destination lointaine, carte de navigation, sauts avec coût en carburant
 - [x] Classes d'étoiles d'Elite, écopage, boosts neutron / naine blanche
-- [x] Scan automatique progressif et scan manuel par corps
+- [x] Scan du système progressif et scan manuel par corps
 - [x] Orbite, cinématique d'atterrissage, actions de surface, décollage
 - [x] Carburant, coque, énergie, matériaux, état des modules
 - [x] Synthèse : réparation, fabrication, améliorations

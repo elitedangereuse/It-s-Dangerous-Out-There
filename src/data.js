@@ -102,7 +102,7 @@ export const CODEX = {
 
 // Savoir xéno conservé entre parties : chaque palier débloque une réponse, pas de la puissance.
 export const KNOWLEDGE = {
-  glyphs: { name: 'Glyphes gardiens', max: 5, tiers: { 2: 'Le scan automatique signale toujours les ruines gardiennes.', 3: 'Vous savez lire le plan gardien sans éveiller la sentinelle.' } },
+  glyphs: { name: 'Glyphes gardiens', max: 5, tiers: { 2: 'Le scan du système signale toujours les ruines gardiennes.', 3: 'Vous savez lire le plan gardien sans éveiller la sentinelle.' } },
   signals: { name: 'Signaux thargoïdes', max: 5, tiers: { 2: 'Vous savez répondre au chant des sondes.', 4: 'Vous savez imiter le signal qui calme une hyperdiction.' } },
 };
 

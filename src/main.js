@@ -298,7 +298,7 @@ function systemPanel() {
   return `
     <h2>${esc(sys.name)}</h2>
     <div class="chips">${chips.join('')}</div>
-    ${unknown && !scanning ? `<div class="empty">Système inconnu. Lancez un <b>scan automatique</b> ${kbd('A')} pour révéler les corps, ou ciblez un signal pour un scan détaillé.</div>` : ''}
+    ${unknown && !scanning ? `<div class="empty">Système inconnu. Lancez un <b>scan du système</b> ${kbd('A')} pour révéler les corps, ou ciblez un signal pour un scan détaillé.</div>` : ''}
     ${scanning ? '<p class="scanning">Scan en cours…</p>' : ''}
     ${sel ? bodyDetail(sel) : ''}
     <h3>Corps du système (${sys.bodies.length})</h3>
@@ -625,6 +625,7 @@ function dockActions() {
     return [
       { act: 'new', icon: icon('jump'), label: 'Nouvelle partie', primary: true, key: 'Entrée' },
       { act: 'retry', label: 'Rejouer cette graine', key: 'R' },
+      { act: 'menu', label: 'Retour au menu principal', key: 'M' },
     ];
   }
   if (state.phase === 'event' || view.scoopPick) return [{ hint: 'Décision requise : choisissez une option dans la fenêtre.' }];
@@ -662,7 +663,7 @@ function dockActions() {
   const sys = state.system;
   const star = STAR_CLASSES[sys.star];
   const acts = [
-    { act: 'auto', icon: icon('radar'), label: 'Scan automatique', cost: `${G.COSTS.autoScan}${icon('bolt')}`, disabled: sys.autoScanned || state.ship.energy < G.COSTS.autoScan, why: sys.autoScanned ? 'Déjà fait' : '', inlineWhy: false, key: 'A', primary: !sys.autoScanned },
+    { act: 'auto', icon: icon('radar'), label: 'Scan du système', cost: `${G.COSTS.autoScan}${icon('bolt')}`, disabled: sys.autoScanned || state.ship.energy < G.COSTS.autoScan, why: sys.autoScanned ? 'Déjà fait' : '', inlineWhy: false, key: 'A', primary: !sys.autoScanned },
   ];
   if (star.scoopable) acts.push({ act: 'scoop', icon: icon('fuel'), label: sys.scooped ? 'Écopage fait' : 'Écoper', disabled: !G.canScoop(state), key: 'E' });
   if (star.boost) acts.push({ act: 'boost', icon: icon('bolt'), label: `Jet ×${star.boost}`, cost: 'dégâts', disabled: !G.canBoost(state), key: 'B' });
@@ -713,7 +714,7 @@ function scoopCard() {
 function endCard() {
   const v = state.phase === 'victory';
   const st = state.stats;
-  const top = [...state.discoveries].sort((a, b) => b.pts - a.pts).slice(0, 5);
+  const top = [...state.discoveries].sort((a, b) => b.pts - a.pts).slice(0, 3);
   return `<div class="card end ${v ? 'won' : 'lost'}" role="dialog">
     <div class="eyebrow">${v ? `${icon('target')}Victoire` : `${icon('skull')}Fin de partie`}</div>
     <h2>${v ? 'Destination atteinte' : 'Fin du voyage'}</h2>
@@ -732,6 +733,7 @@ function endCard() {
     <div class="choices">
       <button class="primary" data-act="new">Nouvelle partie${kbd('Entrée')}</button>
       <button data-act="retry">Rejouer la graine${kbd('R')}</button>
+      <button data-act="menu">Retour au menu principal${kbd('M')}</button>
     </div></div>`;
 }
 
@@ -933,6 +935,9 @@ function act(name) {
       return newGame(Math.floor(Math.random() * 1e9));
     }
     case 'retry': return newGame(state.seed);
+    case 'menu':
+      $('#toasts').innerHTML = '';
+      return showTitle();
   }
   if (state.phase === 'gameover') return setScene('end');
   update();
@@ -1021,6 +1026,7 @@ document.addEventListener('keydown', (e) => {
   if (view.scene === 'end') {
     if (k === 'Enter') press('#overlay [data-act="new"]');
     if (k === 'r') press('#overlay [data-act="retry"]');
+    if (k === 'm') press('#overlay [data-act="menu"]');
     return;
   }
   if (state.phase === 'event' || view.scoopPick) {

@@ -154,13 +154,16 @@ button.primary:hover:not(:disabled), button.primary:focus-visible {
   filter: drop-shadow(0 0 10px rgba(255, 176, 84, 0.55));
 }
 button.primary kbd { color: #6a3510; background: rgba(90, 40, 0, 0.18); }
-button.primary .cost { color: #6a3510; }
+button.primary .cost { color: #2b1405; background: rgba(255, 236, 200, 0.55); }
 button.primary:disabled { color: var(--faint); border-image-source: var(--f-btn-off); }
 button.primary:disabled kbd, button.primary:disabled .cost { color: var(--faint); background: rgba(4, 5, 24, 0.55); }
 
 button .cost {
-  color: var(--muted);
-  font-size: 0.85em;
+  color: #e8eaff;
+  background: rgba(4, 5, 24, 0.5);
+  padding: 0 5px;
+  font-size: 0.9em;
+  font-weight: 700;
   margin-left: 8px;
   white-space: nowrap;
   display: inline-flex;
@@ -800,8 +803,9 @@ button > .ico:first-child { margin-right: 6px; }
 .end .stats span:nth-child(odd) { color: var(--muted); }
 .end .stats span:nth-child(even) { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
 .end .top { color: var(--muted); font-size: 0.9em; }
-.end .choices { grid-template-columns: 1fr 1fr; }
-.end .choices button { text-align: center; }
+.end .choices { grid-template-columns: repeat(3, 1fr); }
+.end .choices button { text-align: center; font-size: 0.92em; }
+.end .choices kbd { display: none; }
 .end.lost { border-image-source: var(--f-bad); filter: drop-shadow(0 0 22px rgba(255, 107, 129, 0.3)) drop-shadow(0 12px 24px rgba(0, 0, 0, 0.5)); }
 .end.lost .eyebrow { color: var(--bad); background: rgba(255, 107, 129, 0.12); }
 .end.won .eyebrow { color: var(--good); background: rgba(125, 240, 180, 0.12); }
