@@ -582,32 +582,53 @@ function matsGrid() {
     .join('')}</div>`;
 }
 
-// --- Panneau : vaisseau ---
+// --- Panneau : modules ---
+// Les jauges carburant/coque/énergie restent dans la barre du haut : ici, l'état de chaque
+// module et ce qu'il change concrètement en jeu.
 
-function shipPanel() {
+function moduleEffect(k, v) {
+  switch (k) {
+    case 'fsd':
+      return v <= 0 ? ['bad', 'Hors service : saut impossible'] : ['', `Portée ×${(0.6 + 0.4 * (v / 100)).toFixed(2)} · ${state.effectiveRange.toFixed(1)} al`];
+    case 'scoop':
+      return v <= 0 ? ['bad', 'Hors service : écopage impossible'] : ['', `Rendement d'écopage ${Math.round(v)} %`];
+    case 'scanner':
+      return v < 25 ? ['bad', 'Scan détaillé impossible sous 25 %'] : ['', `Scan détaillé : ${G.manualScanCost(state)} énergie`];
+    case 'thrusters':
+      return v < 20 ? ['bad', 'Atterrissage impossible sous 20 %'] : v < 50 ? ['mid', 'Atterrissage brutal probable (40 %)'] : ['', 'Atterrissage en douceur'];
+    case 'life':
+      return [v < 30 ? 'bad' : '', state.passenger ? `Passager : −${G.PASSENGER_LIFE_DRAIN} % par saut · à 0 %, fin du voyage` : 'À 0 %, fin du voyage'];
+  }
+  return ['', ''];
+}
+
+function modulesPanel() {
   const s = state.ship;
   const mods = Object.entries(s.modules)
     .map(([k, v]) => {
       const lvl = v < 30 ? 'low' : v < 60 ? 'mid' : '';
-      return `<div class="module"><span>${MODULES[k].name}</span><span class="v ${lvl}">${Math.round(v)} %</span><span class="mini"><i class="${lvl}" style="width:${pct(v, 100)}%"></i></span></div>`;
+      const [cls, fx] = moduleEffect(k, v);
+      return `<div class="module"><span>${MODULES[k].name}</span><span class="v ${lvl}">${Math.round(v)} %</span><span class="mini"><i class="${lvl}" style="width:${pct(v, 100)}%"></i></span><span class="fx ${cls}">${fx}</span></div>`;
     })
     .join('');
-  const bar = (label, v, max, unit = '', cls = '') => `<div class="gauge ${cls} ${v / max < 0.25 ? 'low' : ''}">${icon(GAUGE_ICONS[cls])}<div class="lbl"><span>${label}</span><span>${round1(v)}${unit} / ${max}${unit}</span></div><div class="track"><i style="width:${pct(v, max)}%"></i></div></div>`;
+  const ups = RECIPES.filter((r) => r.once && state.upgrades[r.id]);
+  const repair = RECIPES.find((r) => r.id === 'module');
   return `
     <h2>${esc(s.name)}</h2>
     <p class="sub">${esc(SHIPS[s.model].maker)} · ${esc(SHIPS[s.model].desc)}</p>
-    <div class="bars">${bar('Carburant', s.fuel, s.fuelMax, ' t', 'fuel')}${bar('Coque', s.hull, s.hullMax, '', 'hull')}${bar('Énergie', s.energy, s.energyMax, '', 'energy')}</div>
-    <div class="stats-list">
-    <div class="row"><span>Portée de saut</span><span class="tag">${state.effectiveRange.toFixed(1)} al</span></div>
-    ${s.boost > 1 ? `<div class="row"><span>FSD suralimenté</span><span class="tag">×${s.boost}</span></div>` : ''}
-    <div class="row"><span>Données d'exploration</span><span class="tag">${state.data}</span></div>
-    ${state.passenger ? `<div class="row"><span>Passager</span><span class="tag">${esc(PASSENGERS[state.passenger].name)}</span></div><p class="muted">${esc(PASSENGERS[state.passenger].perk)} Support vital −${G.PASSENGER_LIFE_DRAIN} % par saut.</p>` : ''}
-    ${state.flags.tankLeak ? `<div class="row"><span class="bad">Réservoir percé</span><span class="tag">−${G.LEAK_PER_JUMP} t/saut</span></div>` : ''}
-    </div>
     <h3>Modules</h3>
     <div class="modules">${mods}</div>
+    ${Object.values(s.modules).some((v) => v < 100) ? `<p class="muted">${G.canSynthesize(state, repair) ? `Réparation possible en <b>synthèse</b> ${kbd('Y')} : +${state.passenger === 'engineer' ? 60 : 40} % au module le plus abîmé.` : `Réparer un module coûte ${Object.entries(repair.cost).map(([m, n]) => `${n} ${MATERIALS[m].short}`).join(' + ')}.`}</p>` : ''}
+    <h3>Améliorations</h3>
+    ${ups.length ? `<div class="stats-list">${ups.map((r) => `<div class="row"><span>${r.name}</span><span class="tag">${r.desc}</span></div>`).join('')}</div>` : '<p class="muted">Aucune pour l\'instant. Elles se fabriquent en synthèse.</p>'}
+    ${s.boost > 1 || state.passenger || state.flags.tankLeak ? `<h3>En cours</h3><div class="stats-list">
+    ${s.boost > 1 ? `<div class="row"><span>FSD suralimenté</span><span class="tag">×${s.boost} au prochain saut</span></div>` : ''}
+    ${state.passenger ? `<div class="row"><span>Passager</span><span class="tag">${esc(PASSENGERS[state.passenger].name)}</span></div><p class="muted">${esc(PASSENGERS[state.passenger].perk)}</p>` : ''}
+    ${state.flags.tankLeak ? `<div class="row"><span class="bad">Réservoir percé</span><span class="tag">−${G.LEAK_PER_JUMP} t/saut</span></div>` : ''}
+    </div>` : ''}
     <h3>Matériaux</h3>
     ${matsGrid()}
+    <div class="stats-list"><div class="row"><span>Données d'exploration</span><span class="tag">${state.data}</span></div></div>
     <p class="seed">Graine de la galaxie : ${state.seed}</p>`;
 }
 
@@ -904,7 +925,7 @@ function update() {
   for (const b of document.querySelectorAll('.tabs [data-tab]')) b.setAttribute('aria-selected', String(b.dataset.tab === view.tab));
   const panel = $('#panel');
   const scroll = panel.scrollTop;
-  if (view.tab === 'ship') panel.innerHTML = shipPanel();
+  if (view.tab === 'modules') panel.innerHTML = modulesPanel();
   else if (view.tab === 'log') panel.innerHTML = logPanel();
   else if (view.scene === 'title') panel.innerHTML = `<h2>Plan de vol</h2>
     <div class="flight">
@@ -1108,8 +1129,8 @@ document.addEventListener('keydown', (e) => {
     if (/^[1-9]$/.test(k)) press(`#overlay [data-n="${k}"]`);
     return;
   }
-  if (k === 'v' || k === 'j') {
-    const tab = k === 'v' ? 'ship' : 'log';
+  if (k === 'm' || k === 'j') {
+    const tab = k === 'm' ? 'modules' : 'log';
     view.tab = view.tab === tab ? 'ctx' : tab;
     return update();
   }
