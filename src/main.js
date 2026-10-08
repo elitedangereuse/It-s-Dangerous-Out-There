@@ -83,6 +83,7 @@ function frame(now) {
     update();
   }
   view.t = t;
+  view.dialogBottom = !phoneLandscape.matches;
   if (view.scene === 'surface' || view.scene === 'landing' || view.scene === 'takeoff' || (view.scene === 'event' && state.surface)) view.body = G.currentBody(state) || view.body;
   renderer.render(view, t);
   if (view.hoverBody || (touchUI.matches && view.selectedBodyId)) placeTip();
@@ -125,6 +126,8 @@ canvas.addEventListener('mouseleave', () => {
 
 // Écran tactile : pas de survol, la bulle suit donc le corps sélectionné.
 const touchUI = matchMedia('(hover: none)');
+// Téléphone en paysage : le dialogue d'événement occupe la colonne de droite, pas le bas de la scène.
+const phoneLandscape = matchMedia('(orientation: landscape) and (max-height: 540px)');
 // Téléphone en paysage (même requête que dans style.css) : les actions du corps choisi passent
 // dans la barre d'actions, toujours visible, au lieu du bas du panneau.
 const phoneUI = matchMedia('(orientation: landscape) and (max-height: 540px)');
@@ -878,6 +881,7 @@ function update() {
     overlay.innerHTML = endCard();
   } else if (state.phase === 'event' && !isCinematic()) {
     overlay.hidden = false;
+    overlay.className = 'overlay event';
     overlay.innerHTML = eventCard();
   } else if (view.scene === 'event') {
     // Pendant la cinématique : seul le titre, en bas, comme un sous-titre.

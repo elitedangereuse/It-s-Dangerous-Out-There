@@ -760,7 +760,19 @@ export function createEventScenes(R) {
       const st = view.eventReady ? Math.min(view.sceneTime, 2.9) : view.sceneTime;
       const fn = SURFACE[id] || HYPER[id] || SPACE[id];
       if (SURFACE[id] && !view.body) return SPACE.signal(view, t, st);
+      // Quand le dialogue s'affiche en bas de la scène, la caméra descend un peu : l'action
+      // remonte au-dessus du texte (davantage au sol, où tout se passe près de l'horizon).
+      const lift = view.eventReady && view.dialogBottom ? (SURFACE[id] ? 46 : 30) * easeOut((view.sceneTime - view.eventReadyAt) / 0.6) : 0;
+      if (lift) {
+        ctx.save();
+        ctx.translate(0, -snap(lift));
+      }
       fn(view, t, st);
+      if (lift) {
+        ctx.restore();
+        ctx.fillStyle = '#02030a';
+        ctx.fillRect(0, H - snap(lift), W, snap(lift) + 1);
+      }
       // Bandeaux de cinéma pendant l'introduction.
       const bars = view.eventReady ? Math.max(0, 1 - (view.sceneTime - view.eventReadyAt) * 3) : easeOut(st / 0.5);
       if (bars > 0) {
