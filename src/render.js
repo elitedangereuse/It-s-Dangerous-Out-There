@@ -16,6 +16,7 @@ export const H = 180;
 export const LANDING_DURATION = 7.6;
 export const TAKEOFF_DURATION = 2.4;
 export const JUMP_DURATION = 1.8;
+export const ARRIVAL_DURATION = 1.4;
 
 // Dimensions du vaisseau et du commandant (fournies par sprites.js, valeurs de secours sinon).
 const SHIP_W = S.SHIP_W ?? 52;
@@ -411,7 +412,11 @@ export function createRenderer(canvas) {
     const starY = 90;
     drawStar(sys.star, starX, starY, t);
 
-    const shipX = Math.max(starX + star.radius + 10, 40);
+    const restX = Math.max(starX + star.radius + 10, 40);
+    // Arrivée de saut : le vaisseau entre par la gauche et freine jusqu'à sa place.
+    const arr = view.arriving ? Math.min(1, view.sceneTime / ARRIVAL_DURATION) : 1;
+    const ease = 1 - Math.pow(1 - arr, 3);
+    const shipX = Math.round(-SMALL_W - 30 + (restX + SMALL_W + 30) * ease);
     const shipY = 116 + Math.round(Math.sin(t * 1.6) * 1.5);
     const shipCx = shipX + SMALL_W / 2;
 
@@ -487,35 +492,78 @@ export function createRenderer(canvas) {
         ctx.fillRect(Math.round(shipX - Math.random() * 20), Math.round(shipY + 2 + Math.random() * 6), 1, 1);
       }
     }
-    drawShip(shipX, shipY, t, { thrust: 0.6, small: true });
+    if (arr < 1) {
+      // Sillage de sortie d'hyperespace derrière le vaisseau.
+      for (let i = 0; i < 8; i++) {
+        ctx.globalAlpha = (1 - arr) * (0.6 - i * 0.06);
+        ctx.fillStyle = i % 2 ? '#8a9cff' : '#ffffff';
+        const len = Math.round((1 - arr) * (40 + i * 9));
+        ctx.fillRect(shipX - len, shipY + 1 + ((i * 3) % SMALL_H), len, 1);
+      }
+      ctx.globalAlpha = 1;
+    }
+    drawShip(shipX, shipY, t, { thrust: arr < 1 ? 0.6 + 0.4 * (1 - arr) : 0.6, small: true });
+    // Fin du flash blanc du saut.
+    if (view.arriving && view.sceneTime < 0.35) {
+      ctx.globalAlpha = 1 - view.sceneTime / 0.35;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
   }
 
   // ---------- Saut ----------
 
   function jumpScene(view, t) {
-    const k = Math.min(1, view.sceneTime / JUMP_DURATION);
+    // Vue de côté, comme le sprite : le vaisseau file vers la droite dans le tunnel hyperspatial.
+    const st = view.sceneTime;
+    const k = Math.min(1, st / JUMP_DURATION);
     ctx.fillStyle = '#02030a';
     ctx.fillRect(0, 0, W, H);
-    // La nébuleuse d'arrivée se rapproche à toute vitesse au bout du tunnel.
-    if (view.state?.system) drawSpace(systemSpace(view.state.system), t, { alpha: 0.15 + 0.75 * k * k, zoom: 1 + (1 - k) * 2.5, rocks: false, deco: false });
+    // Le décor d'arrivée transparaît peu à peu derrière le tunnel.
+    if (view.state?.system) drawSpace(systemSpace(view.state.system), t, { alpha: 0.1 + 0.6 * k * k, camX: -st * 60, rocks: false, deco: false });
     const target = STAR_CLASSES[view.jumpStar || 'G'];
-    const rng = new Rng(7);
-    for (let i = 0; i < 160; i++) {
-      const a = rng.range(0, 6.28);
-      const speed = rng.range(0.4, 1.2);
-      const d0 = ((rng.range(0, 1) + view.sceneTime * speed * 1.4) % 1) * 200;
-      const len = 4 + d0 * 0.25 * (0.5 + k);
-      const cx = W / 2, cy = H / 2;
-      ctx.fillStyle = i % 4 === 0 ? target.glow : i % 3 === 0 ? '#ffffff' : '#8a9cff';
-      ctx.globalAlpha = Math.min(1, d0 / 60) * (1 - k * 0.5);
-      for (let j = 0; j < len; j += 1) {
-        ctx.fillRect(Math.round(cx + Math.cos(a) * (d0 + j)), Math.round(cy + Math.sin(a) * (d0 + j) * 0.7), 1, 1);
+    // Parois du tunnel : deux bandes ondulantes qui défilent vers la gauche.
+    const scroll = st * 90 + st * st * 120;
+    for (let x = 0; x < W; x += 2) {
+      const wob = Math.sin((x + scroll) * 0.045) * 6 + Math.sin((x + scroll * 1.3) * 0.11) * 3;
+      const top = Math.round(34 + wob - k * 10);
+      const bot = Math.round(H - 34 - wob + k * 10);
+      for (let i = 0; i < 4; i++) {
+        ctx.globalAlpha = (0.32 - i * 0.07) * (1 - k * 0.4);
+        ctx.fillStyle = i === 0 ? '#8a9cff' : '#3a4ac0';
+        ctx.fillRect(x, top - i * 3, 2, 1);
+        ctx.fillRect(x, bot + i * 3, 2, 1);
       }
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = '#3a4ac0';
+      ctx.fillRect(x, 0, 2, Math.max(0, top - 12));
+      ctx.fillRect(x, bot + 12, 2, H - bot - 12);
+    }
+    // Traînées d'étoiles : elles filent de droite à gauche en s'allongeant (le vaisseau accélère).
+    const rng = new Rng(7);
+    for (let i = 0; i < 150; i++) {
+      const y = Math.round(rng.range(0, H));
+      const speed = rng.range(0.5, 1.4);
+      const ph = rng.range(0, 1);
+      const travel = speed * (0.7 * st + 0.9 * st * st);
+      const len = Math.round(3 + speed * (6 + k * k * 70));
+      const span = W + len + 20;
+      const x = Math.round(W - ((ph + travel) % 1) * span);
+      ctx.fillStyle = i % 4 === 0 ? target.glow : i % 3 === 0 ? '#ffffff' : '#8a9cff';
+      ctx.globalAlpha = (0.35 + 0.5 * (speed - 0.5)) * (1 - k * 0.3);
+      ctx.fillRect(x, y, len, 1);
     }
     ctx.globalAlpha = 1;
-    halo(ctx, W / 2, H / 2, Math.round(1 + k * k * 18), Math.round(4 + k * k * 40), target.glow, 0.6);
-    disc(ctx, W / 2, H / 2, Math.round(1 + k * k * 18), target.color);
-    drawShip(W / 2 - SMALL_W / 2, H / 2 + 26, view.sceneTime, { thrust: 1, small: true });
+    // L'étoile d'arrivée grossit au bout du tunnel, à droite.
+    const sr = Math.round(2 + k * k * 22);
+    const sx = Math.round(W + 6 - k * k * 40);
+    halo(ctx, sx, H / 2, sr, sr * 2 + 8, target.glow, 0.6);
+    disc(ctx, sx, H / 2, sr, target.color);
+    // Le vaisseau, de profil, tremble sous la poussée et avance vers l'étoile à la fin.
+    const shake = Math.round(Math.sin(st * 37) * (0.5 + k));
+    const shipX = 70 + k * k * k * 90;
+    drawShip(shipX, H / 2 - SHIP_H / 2 + shake, st, { thrust: 1 });
     if (k > 0.85) {
       ctx.globalAlpha = (k - 0.85) / 0.15;
       ctx.fillStyle = '#ffffff';
