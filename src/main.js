@@ -705,10 +705,23 @@ function costLabel(cost = {}) {
   return parts.join(', ');
 }
 
+// Bilan d'un choix : matériaux gagnés ou perdus, coque, énergie, carburant, modules, données.
+const EFFECT_ICONS = { hull: 'hull', energy: 'bolt', fuel: 'fuel', fuelMax: 'fuel', module: 'ship', data: 'scope' };
+function effectsLine(effects = []) {
+  if (!effects.length) return '';
+  const signed = (n) => (n > 0 ? `+${n}` : `−${-n}`);
+  const chips = effects.map((e) => {
+    const cls = e.delta > 0 ? 'gain' : 'loss';
+    if (e.kind === 'mat') return mat(e.key, signed(e.delta), cls);
+    return `<span class="fx ${cls}">${icon(EFFECT_ICONS[e.kind])}${esc(G.effectLabel(e))}</span>`;
+  });
+  return `<div class="effects">${chips.join('')}</div>`;
+}
+
 function eventCard() {
   const ev = state.event;
   const choices = ev.outcome
-    ? `<p class="outcome">${esc(ev.outcome)}</p><div class="choices"><button class="primary" data-act="close">Continuer${kbd('Entrée')}</button></div>`
+    ? `<div class="outcome"><p>${esc(ev.outcome)}</p>${effectsLine(ev.effects)}</div><div class="choices"><button class="primary" data-act="close">Continuer${kbd('Entrée')}</button></div>`
     : `<div class="choices">${G.eventChoices(state)
         .map(({ choice, index, label, available }, n) => {
           const cost = costLabel(choice.cost);
