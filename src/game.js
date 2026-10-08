@@ -1,6 +1,6 @@
 // Logique de jeu pure (sans DOM) : état, saut, scan, écopage, atterrissage, synthèse, événements.
 import { Rng, hashMix } from './rng.js';
-import { STAR_CLASSES, BODY_TYPES, RECIPES, MODULES, SCOOP_APPROACHES, SHIPS, PASSENGERS, CODEX, KNOWLEDGE } from './data.js';
+import { STAR_CLASSES, BODY_TYPES, RECIPES, MODULES, MATERIALS, SCOOP_APPROACHES, SHIPS, PASSENGERS, CODEX, KNOWLEDGE } from './data.js';
 import { createGalaxy, generateCandidates, generateSystem, dist, regionsAt } from './galaxy.js';
 import { EVENTS, JUMP_EVENTS, MID_EVENTS, fmt } from './events.js';
 
@@ -372,14 +372,62 @@ export function resolveChoice(state, index) {
   if (!ev || ev.outcome) return null;
   const choice = ev.def.choices[index];
   if (!choice || !choiceAvailable(state, choice)) return null;
+  const before = snapshot(state);
   payCost(state, choice.cost);
   const rng = actionRng(state, `ev-${ev.id}`);
   const text = choice.run(makeCtx(state, rng));
   ev.outcome = text;
-  log(state, text, 'event');
+  ev.effects = diffSnapshot(before, snapshot(state));
+  const summary = effectsText(ev.effects);
+  log(state, summary ? `${text} [${summary}]` : text, 'event');
   refreshCandidates(state);
   checkEnd(state);
   return text;
+}
+
+// Ce qu'un choix a réellement changé (coût compris), pour l'afficher sous l'issue.
+function snapshot(state) {
+  const s = state.ship;
+  return { ship: s, mats: { ...s.materials }, modules: { ...s.modules }, hull: s.hull, energy: s.energy, fuel: s.fuel, fuelMax: s.fuelMax, data: state.data };
+}
+
+const r1 = (n) => Math.round(n * 10) / 10;
+
+function diffSnapshot(a, b) {
+  const fx = [];
+  for (const k of Object.keys(MATERIALS)) {
+    const d = (b.mats[k] || 0) - (a.mats[k] || 0);
+    if (d) fx.push({ kind: 'mat', key: k, delta: d });
+  }
+  // Changement de vaisseau : coque, modules et réservoirs n'ont plus de sens en différence.
+  if (a.ship === b.ship) {
+    for (const kind of ['hull', 'energy', 'fuel', 'fuelMax']) {
+      const d = r1(b[kind] - a[kind]);
+      if (d) fx.push({ kind, delta: d });
+    }
+    const mods = Object.keys(a.modules).map((k) => ({ k, d: b.modules[k] - a.modules[k] })).filter((m) => m.d);
+    if (mods.length === Object.keys(a.modules).length && mods.every((m) => m.d === mods[0].d)) {
+      fx.push({ kind: 'module', key: 'all', delta: mods[0].d });
+    } else {
+      for (const m of mods) fx.push({ kind: 'module', key: m.k, delta: m.d });
+    }
+  }
+  if (b.data !== a.data) fx.push({ kind: 'data', delta: b.data - a.data });
+  return fx;
+}
+
+const sign = (n) => (n > 0 ? `+${n}` : `−${-n}`);
+export const EFFECT_LABELS = { hull: 'Coque', energy: 'Énergie', fuel: 'Carburant', fuelMax: 'Réservoir max', data: 'Données' };
+
+export function effectLabel(e) {
+  if (e.kind === 'mat') return `${sign(e.delta)} ${MATERIALS[e.key].short}`;
+  if (e.kind === 'module') return `${e.key === 'all' ? 'Modules' : MODULES[e.key].name} ${sign(e.delta)} %`;
+  const unit = e.kind === 'fuel' || e.kind === 'fuelMax' ? ' t' : '';
+  return `${EFFECT_LABELS[e.kind]} ${sign(e.delta)}${unit}`;
+}
+
+export function effectsText(effects = []) {
+  return effects.map(effectLabel).join(', ');
 }
 
 export function closeEvent(state) {

@@ -6,6 +6,7 @@ import {
   synthesize, canSynthesize, distanceToDestination, scoopPreview, hasMetalSource, eventChoices, LEAK_PER_JUMP,
 } from '../src/game.js';
 import { RECIPES, STAR_CLASSES } from '../src/data.js';
+import { EVENTS } from '../src/events.js';
 import { loadProfile, saveProfile, absorbRun, gameOptions, unlockedShips } from '../src/profile.js';
 import { Rng } from '../src/rng.js';
 
@@ -244,3 +245,33 @@ function closeEventQueue(g) {
   g.event = { id: 'x', def: { choices: [] }, outcome: 'ok', returnTo: 'system' };
   closeEvent(g);
 }
+
+test('l\'issue d\'un événement liste les matériaux et ressources gagnés ou perdus', () => {
+  const g = createGame(5);
+  const mats = { ...g.ship.materials };
+  const fuel = g.ship.fuel;
+  g.eventQueue = [];
+  g.event = { id: 'distress', def: EVENTS.distress, outcome: null, returnTo: 'system' };
+  g.phase = 'event';
+  resolveChoice(g, 0);
+  const fx = g.event.effects;
+  assert.deepEqual(fx.filter((e) => e.kind === 'mat').map((e) => [e.key, e.delta]), [['germanium', 2], ['polonium', 1]]);
+  assert.equal(g.ship.materials.polonium, (mats.polonium || 0) + 1);
+  assert.deepEqual(fx.find((e) => e.kind === 'fuel'), { kind: 'fuel', delta: -4 });
+  assert.ok(fx.some((e) => e.kind === 'data' && e.delta === 10));
+  assert.ok(g.ship.fuel < fuel);
+});
+
+test('les matériaux aléatoires d\'un événement apparaissent dans le bilan', () => {
+  for (let seed = 1; seed < 40; seed++) {
+    const g = createGame(seed);
+    const before = { ...g.ship.materials };
+    g.eventQueue = [];
+    g.event = { id: 'crash', def: EVENTS.crash, outcome: null, returnTo: 'system' };
+    g.phase = 'event';
+    resolveChoice(g, 0);
+    const total = g.event.effects.filter((e) => e.kind === 'mat').reduce((n, e) => n + e.delta, 0);
+    assert.equal(total, 5);
+    for (const e of g.event.effects.filter((x) => x.kind === 'mat')) assert.equal(g.ship.materials[e.key], (before[e.key] || 0) + e.delta);
+  }
+});

@@ -6,6 +6,7 @@ import { STAR_CLASSES, BODY_TYPES, MATERIALS, MODULES, RECIPES, REGION_TYPES, SC
 import { loadProfile, saveProfile, absorbRun, gameOptions, isUnlocked } from './profile.js';
 import { createRenderer, bodyAtmosphere, W, H, LANDING_DURATION, TAKEOFF_DURATION, JUMP_DURATION } from './render.js';
 import { dist } from './galaxy.js';
+import { EVENT_INTRO } from './eventscenes.js';
 
 const $ = (sel) => document.querySelector(sel);
 const canvas = $('#screen');
@@ -54,7 +55,8 @@ function setScene(scene, extra = {}) {
   update();
 }
 
-const isCinematic = () => ['jump', 'landing', 'takeoff'].includes(view.scene);
+// L'introduction d'un événement est une cinématique ; ensuite la scène reste en fond de la carte.
+const isCinematic = () => ['jump', 'landing', 'takeoff'].includes(view.scene) || (view.scene === 'event' && !view.eventReady);
 
 function finishCinematic() {
   if (view.scene === 'jump') {
@@ -64,6 +66,9 @@ function finishCinematic() {
     setScene(state.phase === 'gameover' ? 'end' : 'surface', { astroX: null });
   } else if (view.scene === 'takeoff') {
     setScene(state.phase === 'gameover' ? 'end' : 'system', { arriving: false });
+  } else if (view.scene === 'event') {
+    Object.assign(view, { eventReady: true, eventReadyAt: view.sceneTime });
+    update();
   }
 }
 
@@ -78,10 +83,10 @@ function frame(now) {
     update();
   }
   view.t = t;
-  if (view.scene === 'surface' || view.scene === 'landing' || view.scene === 'takeoff') view.body = G.currentBody(state) || view.body;
+  if (view.scene === 'surface' || view.scene === 'landing' || view.scene === 'takeoff' || (view.scene === 'event' && state.surface)) view.body = G.currentBody(state) || view.body;
   renderer.render(view, t);
   if (view.hoverBody || (touchUI.matches && view.selectedBodyId)) placeTip();
-  const dur = { jump: JUMP_DURATION, landing: LANDING_DURATION, takeoff: TAKEOFF_DURATION }[view.scene];
+  const dur = { jump: JUMP_DURATION, landing: LANDING_DURATION, takeoff: TAKEOFF_DURATION, event: view.eventReady ? 0 : EVENT_INTRO }[view.scene];
   if (dur && view.sceneTime >= dur) finishCinematic();
   requestAnimationFrame(frame);
 }
@@ -705,10 +710,23 @@ function costLabel(cost = {}) {
   return parts.join(', ');
 }
 
+// Bilan d'un choix : matériaux gagnés ou perdus, coque, énergie, carburant, modules, données.
+const EFFECT_ICONS = { hull: 'hull', energy: 'bolt', fuel: 'fuel', fuelMax: 'fuel', module: 'ship', data: 'scope' };
+function effectsLine(effects = []) {
+  if (!effects.length) return '';
+  const signed = (n) => (n > 0 ? `+${n}` : `−${-n}`);
+  const chips = effects.map((e) => {
+    const cls = e.delta > 0 ? 'gain' : 'loss';
+    if (e.kind === 'mat') return mat(e.key, signed(e.delta), cls);
+    return `<span class="fx ${cls}">${icon(EFFECT_ICONS[e.kind])}${esc(G.effectLabel(e))}</span>`;
+  });
+  return `<div class="effects">${chips.join('')}</div>`;
+}
+
 function eventCard() {
   const ev = state.event;
   const choices = ev.outcome
-    ? `<p class="outcome">${esc(ev.outcome)}</p><div class="choices"><button class="primary" data-act="close">Continuer${kbd('Entrée')}</button></div>`
+    ? `<div class="outcome"><p>${esc(ev.outcome)}</p>${effectsLine(ev.effects)}</div><div class="choices"><button class="primary" data-act="close">Continuer${kbd('Entrée')}</button></div>`
     : `<div class="choices">${G.eventChoices(state)
         .map(({ choice, index, label, available }, n) => {
           const cost = costLabel(choice.cost);
@@ -814,6 +832,7 @@ function titleCard() {
 
 function ctxTabLabel() {
   if (view.scene === 'title') return 'Briefing';
+  if (view.scene === 'event' && !view.eventReady) return 'Événement';
   if (isCinematic()) return 'En vol';
   if (view.mode === 'nav') return 'Navigation';
   if (view.mode === 'synth') return 'Synthèse';
@@ -824,6 +843,15 @@ function ctxTabLabel() {
 function update() {
   if (state.phase === 'surface' && view.scene === 'system') view.scene = 'surface';
   if (state.phase === 'system' && view.scene === 'surface') view.scene = 'system';
+  // Chaque nouvel événement ouvre sur sa cinématique ; elle s'efface quand l'événement se ferme.
+  if (state.phase === 'event' && state.event && view.eventObj !== state.event && !isCinematic() && view.scene !== 'title' && view.scene !== 'end') {
+    view.eventObj = state.event;
+    if (renderer.hasEventScene(state.event.id)) {
+      if (state.surface) view.body = G.currentBody(state) || view.body;
+      Object.assign(view, { scene: 'event', sceneStart: performance.now(), sceneTime: 0, eventId: state.event.id, eventReady: false, mode: 'system', scoopPick: false });
+    }
+  }
+  if (view.scene === 'event' && state.phase !== 'event') view.scene = state.surface ? 'surface' : 'system';
   if ((state.phase === 'victory' || state.phase === 'gameover') && !isCinematic()) view.scene = 'end';
   if (view.mode === 'nav' && state.phase !== 'system') view.mode = 'system';
   if (view.scene !== 'title') {
@@ -851,6 +879,11 @@ function update() {
   } else if (state.phase === 'event' && !isCinematic()) {
     overlay.hidden = false;
     overlay.innerHTML = eventCard();
+  } else if (view.scene === 'event') {
+    // Pendant la cinématique : seul le titre, en bas, comme un sous-titre.
+    overlay.hidden = false;
+    overlay.className = 'overlay cine';
+    overlay.innerHTML = `<p class="cine-title">${icon('alert')}${state.event ? esc(G.eventTitle(state, state.event.def)) : ''}</p>`;
   } else if (view.scoopPick) {
     overlay.hidden = false;
     overlay.innerHTML = scoopCard();
@@ -876,7 +909,7 @@ function update() {
     </div>
     <div class="row"><span>Distance</span><span class="tag">${Math.round(state.galaxy.destination.dist)} al</span></div>
     <h3>Soute</h3>${matsGrid()}`;
-  else if (isCinematic()) panel.innerHTML = `<h2>${{ jump: 'Saut hyperspatial', landing: 'Approche planétaire', takeoff: 'Décollage' }[view.scene]}</h2><p class="muted">${{ jump: 'Le FSD charge… l\'hyperespace s\'ouvre.', landing: 'Mise en orbite, descente, atterrissage.', takeoff: 'Retour en orbite.' }[view.scene]}</p>`;
+  else if (isCinematic()) panel.innerHTML = `<h2>${{ jump: 'Saut hyperspatial', landing: 'Approche planétaire', takeoff: 'Décollage', event: 'Événement' }[view.scene]}</h2><p class="muted">${{ jump: 'Le FSD charge… l\'hyperespace s\'ouvre.', landing: 'Mise en orbite, descente, atterrissage.', takeoff: 'Retour en orbite.', event: state.event ? esc(G.eventText(state, state.event.def)) : '' }[view.scene]}</p>`;
   else if (view.mode === 'synth') panel.innerHTML = synthPanel();
   else if (view.mode === 'nav') panel.innerHTML = navPanel();
   else if (state.phase === 'surface' || view.scene === 'surface') panel.innerHTML = surfacePanel();
