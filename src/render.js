@@ -10,6 +10,7 @@ import {
   NW, NH, THEMES, spaceRecipe, buildNebula, sparkles, themeColors, panoramaRecipe, buildPanorama,
   panoramaIdFor, spaceIdFor, drawLayers, cached, rngOf, hexRgb, mix, css, K,
 } from './scenery.js';
+import { createEventScenes } from './eventscenes.js';
 import { createPixelPlanets, makeSpec, specForBody, specForStar, specForDestination } from './pixelplanets.js';
 
 export const W = 320;
@@ -1079,7 +1080,14 @@ export function createRenderer(canvas) {
     }
   }
 
+  // Cinématiques d'événement (eventscenes.js), avec les outils de dessin de ce module.
+  const eventScenes = createEventScenes({
+    ctx, W, H, drawSpace, systemSpace, drawStar, drawShip, drawAstro, halo, ring, disc,
+    surfaceBackdrop, surfaceParticles, landedYFor, drawRamp, SHIP_LAND_X, SHIP_W, ASTRO_W, ASTRO_H,
+  });
+
   return {
+    hasEventScene: (id) => eventScenes.has(id),
     render(view, t) {
       ctx.setTransform(K, 0, 0, K, 0, 0);
       ctx.imageSmoothingEnabled = false;
@@ -1093,6 +1101,7 @@ export function createRenderer(canvas) {
         case 'takeoff': takeoffScene(view, t); break;
         case 'end': endScene(view, t); break;
         case 'title': titleScene(view, t); break;
+        case 'event': eventScenes.draw(view, t); break;
         default: systemScene(view, t);
       }
       present();

@@ -422,6 +422,18 @@ button > .ico:first-child { margin-right: 6px; }
   animation: fade-in 0.25s var(--ease);
 }
 .overlay.clear { background: linear-gradient(transparent 40%, rgba(2, 3, 16, 0.7)); align-items: flex-end; }
+/* Cinématique d'événement : le titre en sous-titre, les clics passent au canvas (passer). */
+.overlay.cine { background: none; pointer-events: none; padding: 0; }
+/* Posé dans le bandeau noir du bas (16/180 de la hauteur de la scène). */
+.cine-title {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 8.9%;
+  margin: 0; padding: 0 12px; justify-content: center;
+  font-family: var(--font); font-weight: 600; letter-spacing: 1px;
+  color: #fff1dc; text-shadow: 0 2px 0 #000;
+  display: inline-flex; align-items: center; gap: 8px;
+  animation: rise 0.5s var(--ease) 0.3s both;
+}
+.cine-title .ico { width: 14px; height: 14px; color: var(--event); }
 
 /* ---------- Barre d'actions ---------- */
 
