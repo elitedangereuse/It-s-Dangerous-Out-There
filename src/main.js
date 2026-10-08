@@ -618,7 +618,7 @@ function modulesPanel() {
     <p class="sub">${esc(SHIPS[s.model].maker)} · ${esc(SHIPS[s.model].desc)}</p>
     <h3>Modules</h3>
     <div class="modules">${mods}</div>
-    ${Object.values(s.modules).some((v) => v < 100) ? `<p class="muted">${G.canSynthesize(state, repair) ? `Réparation possible en <b>synthèse</b> ${kbd('Y')} : +${state.passenger === 'engineer' ? 60 : 40} % au module le plus abîmé.` : `Réparer un module coûte ${Object.entries(repair.cost).map(([m, n]) => `${n} ${MATERIALS[m].short}`).join(' + ')}.`}</p>` : ''}
+    ${Object.values(s.modules).some((v) => v < 100) ? `<p class="muted mat-line">Réparation en <b>synthèse</b> ${kbd('Y')} : ${Object.entries(repair.cost).map(([m, n]) => mat(m, n, (s.materials[m] || 0) < n ? 'miss' : '')).join(' ')} pour +${state.passenger === 'engineer' ? 60 : 40} % au module le plus abîmé${G.canSynthesize(state, repair) ? '' : ' (matériaux insuffisants)'}.</p>` : ''}
     <h3>Améliorations</h3>
     ${ups.length ? `<div class="stats-list">${ups.map((r) => `<div class="row"><span>${r.name}</span><span class="tag">${r.desc}</span></div>`).join('')}</div>` : '<p class="muted">Aucune pour l\'instant. Elles se fabriquent en synthèse.</p>'}
     ${s.boost > 1 || state.passenger || state.flags.tankLeak ? `<h3>En cours</h3><div class="stats-list">
