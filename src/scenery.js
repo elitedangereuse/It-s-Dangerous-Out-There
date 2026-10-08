@@ -15,6 +15,9 @@ export const NH = 216;
 export const LW = 640;
 const W = 320;
 const H = 180;
+// Finesse : les décors sont calculés à K pixels réels par pixel logique (repère 320×180).
+// Le pixel art reste net, mais deux fois plus fin, et les dégradés ont la place de respirer.
+export const K = 2;
 
 // ---------- Hasard, bruit, couleurs ----------
 
@@ -68,6 +71,13 @@ export const hexRgb = (hex) => {
 };
 export const mix = (a, b, k) => [0, 1, 2].map((i) => Math.round(a[i] + (b[i] - a[i]) * k));
 export const css = (c, a = 1) => (a >= 1 ? `rgb(${c[0]},${c[1]},${c[2]})` : `rgba(${c[0]},${c[1]},${c[2]},${a})`);
+// Rampe affinée : `sub` tons intermédiaires entre deux teintes consécutives.
+export function rampFine(cols, sub) {
+  const out = [];
+  for (let i = 0; i < cols.length - 1; i++) for (let k = 0; k < sub; k++) out.push(mix(cols[i], cols[i + 1], k / sub));
+  out.push(cols[cols.length - 1]);
+  return out;
+}
 const toHex = (c) => '#' + c.map((v) => clamp(v, 0, 255).toString(16).padStart(2, '0')).join('');
 
 function canvasOf(w, h) {
@@ -158,7 +168,8 @@ export function spaceRecipe(id, { region = null, star = null } = {}) {
 }
 
 // La nébuleuse : un foyer très lumineux, une bande de gaz allongée et déformée, des volutes,
-// des couloirs de poussière, quelques rayons. Tramage ordonné entre les teintes de la rampe.
+// des couloirs de poussière, quelques rayons. Calculée à K× ; entre deux teintes de la rampe,
+// trois tons intermédiaires et un tramage léger donnent un dégradé doux mais toujours pixel.
 export function buildNebula(R) {
   const ramp = THEME_RGB[R.theme];
   const acc = R.accent ? THEME_RGB[R.accent] : null;
@@ -166,9 +177,12 @@ export function buildNebula(R) {
   const s = R.seed;
   const [fx, fy] = R.focal;
   const ca = Math.cos(R.angle), sa = Math.sin(R.angle);
-  const field = new Float32Array(NW * NH);
-  for (let y = 0; y < NH; y++) {
-    for (let x = 0; x < NW; x++) {
+  const PW = NW * K, PH = NH * K;
+  const field = new Float32Array(PW * PH);
+  for (let py = 0; py < PH; py++) {
+    const y = py / K;
+    for (let px = 0; px < PW; px++) {
+      const x = px / K;
       let dx = x - fx, dy = y - fy;
       const r0 = Math.hypot(dx, dy);
       // Tourbillon autour du foyer.
@@ -181,8 +195,8 @@ export function buildNebula(R) {
       const v = -(dx + wx) * sa + (dy + wy) * ca;
       const band = Math.exp(-((u * u) / (R.length * R.length) + (v * v) / (R.width * R.width)));
       const core = Math.exp(-(r0 * r0) / (R.core * R.core));
-      const cloud = fbm((x + wx * 0.5) / 42, (y + wy * 0.5) / 42, s + 3, 4);
-      const fil = 1 - Math.abs(2 * fbm((x + wx) / 36, (y + wy) / 22, s + 4, 4) - 1);
+      const cloud = fbm((x + wx * 0.5) / 42, (y + wy * 0.5) / 42, s + 3, 5);
+      const fil = 1 - Math.abs(2 * fbm((x + wx) / 36, (y + wy) / 22, s + 4, 5) - 1);
       const dust = smooth(clamp((fbm(x / 34, y / 30, s + 5, 4) - 0.5) * 3, 0, 1));
       let d = 0.1 + band * (0.18 + 0.62 * cloud) + fil * fil * band * 0.3 + core * 0.42 + cloud * 0.12;
       d -= R.lanes * dust * (0.3 + band * 0.6);
@@ -190,42 +204,51 @@ export function buildNebula(R) {
       d *= (1 - (vx * vx + vy * vy) * 0.9) * R.glow;
       // Les hautes lumières sont tassées : un cœur brillant mais pas un aplat blanc.
       if (d > 0.72) d = 0.72 + (d - 0.72) * 0.35;
-      field[y * NW + x] = d;
+      field[py * PW + px] = d;
     }
   }
-  return withPixels(NW, NH, (data, w) => {
-    for (let y = 0; y < NH; y++) {
-      for (let x = 0; x < NW; x++) {
-        const d = field[y * NW + x];
-        const i = clamp(Math.floor(d * (n - 1) + bayer(x, y) * 0.6 + 0.5), 0, n - 1);
-        let c = ramp[i];
-        // Taches d'une seconde teinte, comme les reflets bleus dans la nébuleuse violette.
-        if (acc && i >= 3 && i < n - 1) {
-          const a = fbm(x / 64, y / 64, s + 9, 3);
+  const SUB = 4;
+  const fine = rampFine(ramp, SUB);
+  const fineAcc = acc ? rampFine(acc, SUB) : null;
+  const top = fine.length - 1;
+  return withPixels(PW, PH, (data, w) => {
+    for (let py = 0; py < PH; py++) {
+      for (let px = 0; px < PW; px++) {
+        const d = field[py * PW + px];
+        const i = clamp(Math.floor(d * top + bayer(px, py) * 0.85 + 0.5), 0, top);
+        let c = fine[i];
+        // Voiles d'une seconde teinte, comme les reflets bleus dans la nébuleuse violette.
+        if (fineAcc && i >= 3 * SUB && i < top - SUB) {
+          const a = fbm(px / K / 64, py / K / 64, s + 9, 3);
           const k = smooth(clamp((a - 0.5) / 0.16, 0, 1));
-          if (bayer(x, y) + 0.5 < k) c = acc[i];
+          if (k > 0) c = mix(c, fineAcc[i], Math.round((k + bayer(px, py) * 0.3) * 4) / 4 * 0.85);
         }
-        put(data, w, x, y, c);
+        put(data, w, px, py, c);
       }
     }
     const r = rngOf(s + 11);
     // Rayons fins partant du foyer.
     for (let k = 0; k < R.rays; k++) {
       const a = r() * Math.PI * 2, len = 30 + r() * 110, c = ramp[n - 2 - Math.floor(r() * 2)];
-      for (let j = 14; j < len; j++) {
-        const x = Math.round(fx + Math.cos(a) * j), y = Math.round(fy + Math.sin(a) * j * 0.8);
-        if (x < 0 || y < 0 || x >= NW || y >= NH) break;
-        if ((j & 1) && j > len * 0.5) continue;
-        put(data, w, x, y, c, Math.round(90 * Math.sin((Math.PI * (j - 14)) / (len - 14))));
+      for (let j = 14 * K; j < len * K; j++) {
+        const x = Math.round(fx * K + Math.cos(a) * j), y = Math.round(fy * K + Math.sin(a) * j * 0.8);
+        if (x < 0 || y < 0 || x >= PW || y >= PH) break;
+        put(data, w, x, y, c, Math.round(70 * Math.sin((Math.PI * (j - 14 * K)) / (len * K - 14 * K))));
       }
     }
-    // Poussière d'étoiles, plus dense dans la bande.
-    for (let k = 0; k < 520; k++) {
-      const x = Math.floor(r() * NW), y = Math.floor(r() * NH);
-      const d = field[y * NW + x];
-      if (r() > 0.35 + d) continue;
+    // Poussière d'étoiles, plus dense dans la bande : un pixel fin, parfois une étoile plus grosse.
+    for (let k = 0; k < 1400; k++) {
+      const x = Math.floor(r() * PW), y = Math.floor(r() * PH);
+      const d = field[y * PW + x];
+      if (r() > 0.3 + d) continue;
       const c = r() < 0.7 ? [255, 255, 255] : ramp[n - 2];
-      put(data, w, x, y, c, 70 + Math.floor(r() * 150));
+      const al = 60 + Math.floor(r() * 170);
+      put(data, w, x, y, c, al);
+      if (r() < 0.08 && x + 1 < PW && y + 1 < PH) {
+        put(data, w, x + 1, y, c, al >> 1);
+        put(data, w, x, y + 1, c, al >> 1);
+        put(data, w, x + 1, y + 1, c, al >> 2);
+      }
     }
   });
 }
@@ -303,8 +326,9 @@ export function panoramaRecipe(id, type = 'rocky') {
 
 // Montagnes : des pics (ou dômes, mesas, aiguilles, cristaux) dessinés un à un, chacun avec
 // une face éclairée et une face à l'ombre séparées par une arête irrégulière, un liseré de
-// lumière et, en altitude, de la neige. Les plus petits passent devant.
-function rangeLayer({ seed, style, base, amp, count, lit, shade, rim, snow = null, side = 1, h = H, deep = null }) {
+// lumière et, en altitude, de la neige. Les plus petits passent devant. Calcul à K× : les
+// faces reçoivent un modelé doux (plus claires vers le sommet) et le pied se fond dans la brume.
+function rangeLayer({ seed, style, base, amp, count, lit, shade, rim, snow = null, side = 1, h = H, haze = null }) {
   const r = rngOf(seed);
   const peaks = [];
   for (let i = 0; i < count; i++) {
@@ -319,8 +343,9 @@ function rangeLayer({ seed, style, base, amp, count, lit, shade, rim, snow = nul
     peaks.push({ x: r() * LW, top: base - ph, ph, hw, lean: (r() - 0.5) * 0.4, s: Math.floor(r() * 1e6), plat: 0.3 + r() * 0.4 });
   }
   peaks.sort((a, b) => b.ph - a.ph);
-  const owner = new Int16Array(LW * h).fill(-1);
-  const rel = new Float32Array(LW * h); // position relative dans le pic (-1 gauche, 1 droite)
+  const PW = LW * K, PH = h * K;
+  const owner = new Int16Array(PW * PH).fill(-1);
+  const rel = new Float32Array(PW * PH); // position relative dans le pic (-1 gauche, 1 droite)
   // Profil : renvoie la hauteur du pic à la distance horizontale u (en demi-largeurs).
   const profile = (p, u) => {
     const a = Math.abs(u);
@@ -332,48 +357,69 @@ function rangeLayer({ seed, style, base, amp, count, lit, shade, rim, snow = nul
     return 1 - a;
   };
   peaks.forEach((p, k) => {
-    for (let dx = -Math.ceil(p.hw); dx <= Math.ceil(p.hw); dx++) {
-      const u = dx / p.hw;
+    const span = Math.ceil(p.hw * K);
+    for (let dx = -span; dx <= span; dx++) {
+      const u = dx / (p.hw * K);
       let v = profile(p, u);
       if (v < 0) continue;
-      // Arêtes irrégulières.
-      v += (vnoise((p.x + dx) / 5, 0, 1 << 20, p.s) - 0.5) * (style === 'domes' ? 0.06 : 0.12) * (1 - Math.abs(u));
-      const top = Math.round(p.top + p.ph * (1 - v) + Math.abs(u) * p.ph * p.lean * 0);
-      const x = mod(Math.round(p.x + dx), LW);
-      for (let y = Math.max(0, top); y < h; y++) {
-        owner[y * LW + x] = k;
-        rel[y * LW + x] = u;
+      // Arêtes irrégulières (bruit à deux échelles : grandes cassures, petites aspérités).
+      const ldx = dx / K;
+      v += (vnoise((p.x + ldx) / 5, 0, 1 << 20, p.s) - 0.5) * (style === 'domes' ? 0.06 : 0.12) * (1 - Math.abs(u));
+      v += (vnoise((p.x + ldx) / 1.6, 3, 1 << 20, p.s) - 0.5) * (style === 'domes' ? 0.015 : 0.035) * (1 - Math.abs(u));
+      const top = Math.round((p.top + p.ph * (1 - v)) * K);
+      const x = mod(Math.round(p.x * K + dx), PW);
+      for (let y = Math.max(0, top); y < PH; y++) {
+        owner[y * PW + x] = k;
+        rel[y * PW + x] = u;
       }
     }
   });
-  return withPixels(LW, h, (d, w) => {
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const k = owner[y * LW + x];
+  const hz = haze || shade;
+  return withPixels(PW, PH, (d, w) => {
+    for (let py = 0; py < PH; py++) {
+      const y = py / K;
+      for (let px = 0; px < w; px++) {
+        const x = px / K;
+        const k = owner[py * PW + px];
         if (k < 0) {
-          if (y >= base) put(d, w, x, y, shade);
+          if (y >= base) put(d, w, px, py, hz);
           continue;
         }
         const p = peaks[k];
-        const u = rel[y * LW + x];
+        const u = rel[py * PW + px];
         const depth = (y - p.top) / Math.max(1, p.ph); // 0 au sommet
+        const dt = bayer(px, py);
         // Arête de partage lumière/ombre, qui serpente en descendant.
         const ridge = (vnoise(y / 4, p.s % 97, 1 << 20, p.s) - 0.5) * 0.5 + p.lean * depth;
         let litSide = (u - ridge) * side > 0;
         if (style === 'domes') litSide = u * side + (0.4 - depth) * 0.8 > 0.1;
-        let c = litSide ? lit : shade;
+        // Modelé : la face éclairée s'assombrit doucement en descendant et vers l'arête ;
+        // la face à l'ombre reçoit un peu de lumière réfléchie près de l'arête.
+        let c;
+        if (litSide) {
+          const edge = clamp(1 - Math.abs(u - ridge) * 2.2, 0, 1);
+          c = mix(lit, shade, Math.round((clamp(depth * 0.32 + edge * 0.18, 0, 0.5) + dt * 0.12) * 6) / 6);
+        } else {
+          const near = clamp(1 - Math.abs(u - ridge) * 3, 0, 1);
+          c = mix(shade, lit, Math.round((near * 0.16 + dt * 0.08) * 6) / 6);
+        }
         // Ravines sombres sur la face éclairée.
-        if (litSide && style !== 'cristaux' && vnoise(x / 3, y / 9, 1 << 20, p.s + 3) > 0.74) c = mix(lit, shade, 0.5);
+        if (litSide && style !== 'cristaux') {
+          const rv = vnoise(x / 2.6, y / 11, 1 << 20, p.s + 3);
+          if (rv > 0.76) c = mix(c, shade, rv > 0.84 ? 0.38 : 0.2);
+        }
         // Strates des mesas.
-        if (style === 'mesas' && depth > 0.15 && (y + (p.s & 7)) % 7 === 0) c = mix(c, shade, 0.45);
+        if (style === 'mesas' && depth > 0.15 && (Math.floor(y) + (p.s & 7)) % 7 === 0 && py % K === 0) c = mix(c, shade, 0.3);
         // Neige en altitude.
         if (snow && depth < 0.3 + (vnoise(x / 3, 0, 1 << 20, p.s) - 0.5) * 0.25 && p.ph > 18) c = litSide ? snow[0] : snow[1];
         // Liseré lumineux sur la silhouette.
-        const above = y > 0 ? owner[(y - 1) * LW + x] : -1;
+        const above = py > 0 ? owner[(py - 1) * PW + px] : -1;
         if (above !== k && (litSide || style === 'cristaux')) c = rim;
-        // Bas de la chaîne fondu dans la brume.
-        if (deep && depth > 0.7 && bayer(x, y) + 0.5 < (depth - 0.7) * 2.2) c = deep;
-        put(d, w, x, y, c);
+        else if (above !== k) c = mix(c, rim, 0.35);
+        // Pied de la chaîne fondu dans la brume.
+        const fog = clamp((depth - 0.55) / 0.45, 0, 1);
+        if (fog > 0) c = mix(c, hz, Math.round((smooth(fog) * 0.85 + dt * 0.18) * 5) / 5);
+        put(d, w, px, py, c);
       }
     }
   });
@@ -382,7 +428,8 @@ function rangeLayer({ seed, style, base, amp, count, lit, shade, rim, snow = nul
 // Bancs de nuages pixel art : des bulles empilées, ombrées par le bas, base plate.
 function cloudLayer({ seed, tones, base, spread, count, rMin, rMax, h = H }) {
   const r = rngOf(seed);
-  const n = tones.length;
+  const shades = rampFine(tones, 3);
+  const n = shades.length;
   const blobs = [];
   const heaps = 3 + Math.floor(r() * 4);
   for (let hp = 0; hp < heaps; hp++) {
@@ -396,42 +443,45 @@ function cloudLayer({ seed, tones, base, spread, count, rMin, rMax, h = H }) {
   }
   for (let x = 0; x < LW; x += rMin * 2) if (r() < 0.6) blobs.push({ x: x + r() * rMin, y: base - r() * 3, rad: rMin * (0.6 + r() * 0.6) });
   blobs.sort((a, b) => a.y - b.y);
-  return withPixels(LW, h, (d, w) => {
+  const PW = LW * K, PH = h * K;
+  return withPixels(PW, PH, (d, w) => {
     blobs.forEach((b) => {
-      const R = Math.round(b.rad);
-      for (let dy = -R; dy <= R; dy++) {
-        const py = Math.round(b.y + dy);
-        if (py < 0 || py >= h || py > base + 2) continue;
+      const R = b.rad * K;
+      const Ri = Math.round(R);
+      const bx = b.x * K, by = b.y * K;
+      for (let dy = -Ri; dy <= Ri; dy++) {
+        const py = Math.round(by + dy);
+        if (py < 0 || py >= PH || py > (base + 2) * K) continue;
         const half = Math.floor(Math.sqrt(R * R - dy * dy));
         for (let dx = -half; dx <= half; dx++) {
-          const px = mod(Math.round(b.x + dx), w);
-          const shade = (-dy / R) * 0.75 + 0.25 - Math.max(0, (py - (base - 6)) / 8);
-          let i = Math.floor(((shade + 1) / 2) * n + bayer(px, py) * 0.7);
-          if (dy * dy + dx * dx > (R - 1.2) * (R - 1.2) && dy < -R * 0.3) i += 1;
-          put(d, w, px, py, tones[clamp(i, 0, n - 1)]);
+          const px = mod(Math.round(bx + dx), w);
+          const shade = (-dy / R) * 0.75 + 0.25 - Math.max(0, (py / K - (base - 6)) / 8);
+          let i = Math.floor(((shade + 1) / 2) * n + bayer(px, py) * 0.8);
+          // Bord éclairé, d'un pixel fin, sur le haut des bulles.
+          if (dy * dy + dx * dx > (R - 1.4) * (R - 1.4) && dy < -R * 0.3) i += 2;
+          put(d, w, px, py, shades[clamp(i, 0, n - 1)]);
         }
       }
     });
   });
 }
 
-// Ciel : dégradé vertical tramé (avec des stries de nuages fins pour les ciels à atmosphère).
+// Ciel : dégradé vertical finement tramé (avec des stries de nuages fins pour les ciels à atmosphère).
 function skyLayer(stops, { seed, streaks = null }) {
-  const cols = stops.map(hexRgb);
-  const fine = [];
-  for (let i = 0; i < cols.length - 1; i++) for (let k = 0; k < 4; k++) fine.push(mix(cols[i], cols[i + 1], k / 4));
-  fine.push(cols[cols.length - 1]);
+  const fine = rampFine(stops.map(hexRgb), 8);
   const horizonY = 128;
-  return withPixels(W, H, (d, w) => {
-    for (let y = 0; y < H; y++) {
+  const PW = W * K, PH = H * K;
+  return withPixels(PW, PH, (d, w) => {
+    for (let py = 0; py < PH; py++) {
+      const y = py / K;
       const t = clamp(y / horizonY, 0, 1) * (fine.length - 1);
-      for (let x = 0; x < w; x++) {
-        let k = t + bayer(x, y) * 1.1;
+      for (let px = 0; px < w; px++) {
+        let k = t + bayer(px, py) * 1.2;
         if (streaks) {
-          const n = fbm(x / 70, y / 5, seed, 3);
-          if (n > 0.62) k += (n - 0.62) * 9;
+          const n = fbm(px / K / 70, y / 5, seed, 4);
+          if (n > 0.6) k += smooth(clamp((n - 0.6) / 0.14, 0, 1)) * 10;
         }
-        put(d, w, x, y, fine[clamp(Math.round(k), 0, fine.length - 1)]);
+        put(d, w, px, py, fine[clamp(Math.round(k), 0, fine.length - 1)]);
       }
     }
   });
@@ -439,57 +489,73 @@ function skyLayer(stops, { seed, streaks = null }) {
 
 // Sol proche : la zone d'atterrissage, texturée, avec des cailloux et des rochers en bord de cadre.
 function groundLayer({ seed, top, lit, mid, dark, deep, rim, rocks, side }) {
+  // Hauteur du sol (repère logique, non arrondie) : plate dans la zone d'atterrissage.
+  const heightAt = (x) => {
+    const hgt = top + (fbm(x / 26, 3, seed, 3) - 0.5) * 12;
+    if (x > 56 && x < 168) return top;
+    if (x >= 168 && x < 180) return top + (hgt - top) * ((x - 168) / 12);
+    if (x > 44 && x <= 56) return top + (hgt - top) * ((56 - x) / 12);
+    return hgt;
+  };
   const near = [];
-  for (let x = 0; x < W; x++) {
-    let hgt = top + Math.round((fbm(x / 26, 3, seed, 3) - 0.5) * 12);
-    if (x > 56 && x < 168) hgt = top; // zone d'atterrissage plane
-    else if (x >= 168 && x < 180) hgt = Math.round(top + (hgt - top) * ((x - 168) / 12));
-    else if (x > 44 && x <= 56) hgt = Math.round(top + (hgt - top) * ((56 - x) / 12));
-    near.push(hgt);
-  }
+  for (let x = 0; x < W; x++) near.push(Math.round(heightAt(x)));
+  const PW = W * K, PH = H * K;
+  const nearP = [];
+  for (let px = 0; px < PW; px++) nearP.push(Math.round(heightAt(px / K) * K));
+  const tones = rampFine([rim, lit, mid, dark, deep], 3);
   const r = rngOf(seed + 5);
-  const canvas = withPixels(W, H, (d, w) => {
-    for (let x = 0; x < W; x++) {
-      for (let y = near[x]; y < H; y++) {
-        const dd = y - near[x];
+  const canvas = withPixels(PW, PH, (d, w) => {
+    for (let px = 0; px < PW; px++) {
+      for (let py = nearP[px]; py < PH; py++) {
+        const dd = py - nearP[px];
         let c;
         if (dd === 0) c = rim;
-        else if (dd < 3) c = lit;
+        else if (dd < 2) c = mix(rim, lit, 0.5);
         else {
-          const t = clamp((y - near[x]) / (H - near[x] + 1), 0, 1);
-          const n = fbm(x / 9, y / 4, seed + 1, 3);
-          const k = t * 2.2 + (n - 0.5) * 1.6 + bayer(x, y) * 0.6;
-          c = k < 0.5 ? lit : k < 1.2 ? mid : k < 1.9 ? dark : deep;
+          const t = clamp((py - nearP[px]) / (PH - nearP[px] + 1), 0, 1);
+          const n = fbm(px / K / 9, py / K / 4, seed + 1, 4);
+          const k = 3 + t * 7 + (n - 0.5) * 5 + bayer(px, py) * 1.1;
+          c = tones[clamp(Math.round(k), 3, tones.length - 1)];
         }
-        put(d, w, x, y, c);
+        put(d, w, px, py, c);
       }
     }
-    // Cailloux.
-    for (let i = 0; i < 70; i++) {
-      const x = Math.floor(r() * W), y = near[x] + 4 + Math.floor(r() * (H - near[x] - 4));
-      if (y >= H - 1) continue;
-      const s = r() < 0.2 ? 2 : 1;
-      for (let a = 0; a < s + 1; a++) for (let b = 0; b <= s; b++) if (x + a < W && y + b < H) put(d, w, x + a, y + b, b === 0 ? lit : dark);
+    // Cailloux : un reflet fin dessus, une ombre portée dessous.
+    for (let i = 0; i < 110; i++) {
+      const px = Math.floor(r() * PW);
+      const py = nearP[px] + 6 + Math.floor(r() * (PH - nearP[px] - 6));
+      if (py >= PH - 2) continue;
+      const s = r() < 0.25 ? 3 : r() < 0.6 ? 2 : 1;
+      for (let a = 0; a <= s; a++) {
+        for (let b = 0; b <= s; b++) {
+          if (px + a >= PW || py + b >= PH) continue;
+          if ((a === 0 || a === s) && (b === 0 || b === s) && s > 1) continue;
+          put(d, w, px + a, py + b, b === 0 ? lit : b === s ? deep : mid);
+        }
+      }
+      if (px + s + 1 < PW && py + s + 1 < PH) put(d, w, px + s + 1, py + s, deep, 140);
     }
   });
-  // Rochers de premier plan, en silhouette, sur les bords.
+  // Rochers de premier plan, en silhouette modelée, sur les bords.
   if (rocks) {
     const ctx = canvas.getContext('2d');
-    const img = ctx.getImageData(0, 0, W, H);
+    const img = ctx.getImageData(0, 0, PW, PH);
     const dd = img.data;
     const boulders = [];
     for (let i = 0; i < 3; i++) boulders.push({ x: r() * 40 - 6, y: H - r() * 20, rx: 14 + r() * 16, ry: 9 + r() * 12 });
     for (let i = 0; i < 3; i++) boulders.push({ x: W - 40 + r() * 46, y: H - r() * 20, rx: 14 + r() * 16, ry: 9 + r() * 12 });
     for (const b of boulders) {
-      for (let y = Math.floor(b.y - b.ry); y < H; y++) {
-        for (let x = Math.floor(b.x - b.rx); x <= b.x + b.rx; x++) {
-          if (x < 0 || x >= W || y < 0) continue;
+      for (let py = Math.floor((b.y - b.ry) * K); py < PH; py++) {
+        for (let px = Math.floor((b.x - b.rx) * K); px <= (b.x + b.rx) * K; px++) {
+          if (px < 0 || px >= PW || py < 0) continue;
+          const x = px / K, y = py / K;
           const u = (x - b.x) / b.rx, v = (y - b.y) / b.ry;
-          const q = u * u + v * v + (vnoise(x / 4, y / 4, 1 << 20, seed + 9) - 0.5) * 0.35;
-          if (q > 1 || y > H) continue;
-          const litSide = u * side - v * 0.8 > 0.35;
-          const edge = q > 0.82 && v < 0 && u * side > -0.2;
-          put(dd, W, x, y, edge ? rim : litSide ? dark : deep);
+          const q = u * u + v * v + (vnoise(x / 4, y / 4, 1 << 20, seed + 9) - 0.5) * 0.35 + (vnoise(x, y, 1 << 20, seed + 19) - 0.5) * 0.06;
+          if (q > 1) continue;
+          const light = u * side - v * 0.8;
+          const edge = q > 0.86 && v < 0 && u * side > -0.2;
+          const k = clamp(Math.round((0.75 - light) * 3 + bayer(px, py) * 0.9), 0, 3);
+          put(dd, PW, px, py, edge ? rim : [mid, dark, mix(dark, deep, 0.5), deep][k]);
         }
       }
     }
@@ -538,10 +604,11 @@ export function buildPanorama(R, { space = 'violet' } = {}) {
     const lit = tone(mix(litBase, pal[1], i * 0.15), p.fog);
     const shade = tone(mix(shadeBase, [0, 0, 0], i * 0.12), p.fog);
     const rim = tone(mix(litBase, [255, 255, 255], 0.3), p.fog * 0.8);
-    const deep = null;
+    // Brume au pied de chaque chaîne : plus claire pour les plans lointains (perspective aérienne).
+    const haze = tone(mix(shade, lit, 0.2), Math.min(1, p.fog + (R.airless ? 0.1 : 0.22)));
     out.layers.push({
       name: `relief-${i}`,
-      canvas: rangeLayer({ seed: R.seed + 10 + i, style: p.style, base: p.base, amp: p.amp, count: p.count, lit, shade, rim, snow: snow && i < 2 ? snow.map((c) => tone(c, p.fog * 0.6)) : null, side, deep }),
+      canvas: rangeLayer({ seed: R.seed + 10 + i, style: p.style, base: p.base, amp: p.amp, count: p.count, lit, shade, rim, snow: snow && i < 2 ? snow.map((c) => tone(c, p.fog * 0.6)) : null, side, haze }),
       depth: p.depth,
       drift: 0,
     });
@@ -590,12 +657,15 @@ export function panoramaIdFor(body) {
   return mod(Math.floor(hash3((body.seed | 0) % 1000003, 29, 5) * 1e9), PLANET_COUNT);
 }
 
-// Dessine des calques bouclants (640 px). camX : avancée de la caméra ; camY : décalage vertical.
+// Dessine des calques bouclants (640 px logiques, calculés à K×). camX : avancée de la caméra ;
+// camY : décalage vertical. Le défilement se fait au pixel fin.
 export function drawLayers(ctx, layers, { t = 0, camX = 0, camY = 0 } = {}) {
+  const PW = LW * K;
   for (const l of layers) {
-    const ox = mod(Math.round(camX * l.depth + t * l.drift), LW);
-    const y = Math.round(camY * l.depth);
-    ctx.drawImage(l.canvas, -ox, y);
-    if (LW - ox < W) ctx.drawImage(l.canvas, LW - ox, y);
+    const ox = mod(Math.round((camX * l.depth + t * l.drift) * K), PW);
+    const y = Math.round(camY * l.depth * K) / K;
+    const lw = l.canvas.width / K, lh = l.canvas.height / K;
+    ctx.drawImage(l.canvas, -ox / K, y, lw, lh);
+    if (PW - ox < W * K) ctx.drawImage(l.canvas, (PW - ox) / K, y, lw, lh);
   }
 }

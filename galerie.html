@@ -53,7 +53,7 @@
     const grid = document.getElementById('grid');
     // Un seul moteur de rendu (un seul contexte WebGL) : chaque aperçu y est dessiné puis recopié.
     const stage = document.createElement('canvas');
-    stage.width = 320; stage.height = 180;
+    stage.width = 640; stage.height = 360;
     const renderer = createRenderer(stage);
     const count = () => (kind === 'space' ? SPACE_COUNT : PLANET_COUNT);
     function paint(fig, t) {
@@ -76,7 +76,7 @@
         const id = ids[k++];
         const fig = document.createElement('figure');
         fig.canvas = document.createElement('canvas');
-        fig.canvas.width = 320; fig.canvas.height = 180;
+        fig.canvas.width = 640; fig.canvas.height = 360;
         Object.assign(fig, { kind, id, type });
         // Deux passes : Pixel Planets a besoin d'une première image pour ses sprites.
         paint(fig, 0);

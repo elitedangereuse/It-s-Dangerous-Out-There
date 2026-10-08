@@ -6,6 +6,13 @@
 // hors écran (création paresseuse : rien n'est créé à l'import du module),
 // puis copiée avec drawImage ; seuls les éléments animés (panache, feux,
 // train d'atterrissage, voyant du scanner) sont dessinés à chaque image.
+//
+// Finesse : le pré-rendu se fait à K× (pixel deux fois plus fin que le repère logique).
+// Les dessins sont agrandis par Scale2x, qui arrondit les diagonales sans flou, puis le
+// contour est adouci côté lumière ; panache et effets sont tracés directement au pixel fin.
+import { K } from './scenery.js';
+const PX = 1 / K;
+const snap = (v) => Math.round(v * K) / K;
 
 // Palette commune (ombres teintées bleu-violet, lumières chaudes, lumière en haut à gauche).
 export const SPRITE_PALETTE = {
@@ -248,17 +255,63 @@ function makeCanvas(w, h) {
   return new OffscreenCanvas(w, h);
 }
 
+// Scale2x (EPX) sur la grille de lettres : chaque pixel devient 2×2 et les escaliers
+// des diagonales et des courbes sont arrondis, sans couleur inventée.
+export function scale2x(rows) {
+  const h = rows.length, w = rows[0].length;
+  const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? '.' : rows[y][x]);
+  const top = [], bot = [];
+  for (let y = 0; y < h; y++) {
+    let r0 = '', r1 = '';
+    for (let x = 0; x < w; x++) {
+      const P = at(x, y), A = at(x, y - 1), B = at(x + 1, y), C = at(x - 1, y), D = at(x, y + 1);
+      r0 += (C === A && C !== D && A !== B ? A : P) + (A === B && A !== C && B !== D ? B : P);
+      r1 += (D === C && D !== B && C !== A ? C : P) + (B === D && B !== A && D !== C ? D : P);
+    }
+    top.push(r0);
+    bot.push(r1);
+  }
+  return top.flatMap((r, i) => [r, bot[i]]);
+}
+
+// Contour adouci : sur le dessus (côté lumière), le trait noir devient une ombre bleutée
+// quand il borde une surface claire ; il reste sombre partout ailleurs pour la lisibilité.
+const LIGHT = new Set(['w', 'l', 'm', 'a', 'g', 'V']);
+function softenOutline(rows) {
+  const h = rows.length, w = rows[0].length;
+  const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? '.' : rows[y][x]);
+  return rows.map((row, y) => [...row].map((ch, x) => {
+    if (ch !== 'o') return ch;
+    if (at(x, y - 1) === '.' && LIGHT.has(at(x, y + 1))) return 'd';
+    return ch;
+  }).join(''));
+}
+
+const hiRes = new Map();
+function rowsK(key, rows) {
+  let r = hiRes.get(key);
+  if (!r) {
+    r = rows;
+    for (let s = 1; s < K; s *= 2) r = scale2x(r);
+    r = softenOutline(r);
+    hiRes.set(key, r);
+  }
+  return r;
+}
+
 function bake(key, rows, flip, palette = SPRITE_PALETTE) {
   const k = key + (flip ? '|f' : '');
   let c = baked.get(k);
   if (c) return c;
-  const w = rows[0].length, h = rows.length;
-  c = makeCanvas(w, h);
+  const hr = rowsK(key, rows);
+  c = makeCanvas(hr[0].length, hr.length);
   const g = c.getContext('2d');
-  drawSprite(g, rows, palette, 0, 0, 1, flip);
+  drawSprite(g, hr, palette, 0, 0, 1, flip);
   baked.set(k, c);
   return c;
 }
+// Pose un pré-rendu K× à sa taille logique.
+const put = (ctx, c, x, y) => ctx.drawImage(c, x, y, c.width / K, c.height / K);
 
 // Petit bruit déterministe pour le scintillement.
 function hash(n) {
@@ -269,7 +322,7 @@ function hash(n) {
 // ---------------------------------------------------------------------------
 // x, y = coin haut gauche de la coque ; le vaisseau regarde à droite sauf si flip.
 export function drawShip(ctx, x, y, { t = 0, thrust = 0, gear = 0, flip = false, small = false } = {}) {
-  x = Math.round(x); y = Math.round(y);
+  x = snap(x); y = snap(y);
   t = Number.isFinite(t) ? t : 0;
   const W = small ? SHIP_SMALL_W : SHIP_W;
   const H = small ? SHIP_SMALL_H : SHIP_H;
@@ -277,34 +330,40 @@ export function drawShip(ctx, x, y, { t = 0, thrust = 0, gear = 0, flip = false,
   const rect = (lx, ly, w, h) => ctx.fillRect(flip ? x + W - lx - w : x + lx, y + ly, w, h);
   const th = Math.max(0, Math.min(1, thrust));
 
-  // 1. Panache des moteurs (derrière la coque)
+  // 1. Panache des moteurs (derrière la coque), tracé au pixel fin : un fuseau bleu
+  // translucide, un jet cyan, un cœur presque blanc, et une traînée qui s'efface.
   if (th > 0.01) {
     const ports = small ? SMALL_PORTS : LARGE_PORTS;
     ports.forEach((p, pi) => {
       const flick = 0.82 + 0.18 * hash(Math.floor(t * 30) + pi * 7.3);
-      const L = Math.max(2, Math.round(p.len * th * flick) + 2);
-      const mid = (p.y0 + p.y1) / 2;
-      const half = (p.y1 - p.y0) / 2 + 1;
-      for (let ry = p.y0 - 1; ry <= p.y1 + 1; ry++) {
-        const k = 1 - Math.abs(ry - mid) / (half + 0.5);
+      const L = Math.max(2, p.len * th * flick + 2);
+      const mid = (p.y0 + p.y1 + 1) / 2;
+      const half = (p.y1 - p.y0 + 1) / 2 + 1;
+      const c0 = p.core[0], c1 = p.core[1] + 1;
+      for (let ry = (p.y0 - 1) * K; ry < (p.y1 + 2) * K; ry++) {
+        const ly = ry / K;
+        const k = 1 - Math.abs(ly + PX / 2 - mid) / half;
         if (k <= 0) continue;
-        const outer = Math.round(L * (0.35 + 0.65 * k));
-        const inner = Math.round(L * 0.7 * k);
-        const core = ry >= p.core[0] && ry <= p.core[1] ? Math.round(L * 0.38 * k) : 0;
-        ctx.globalAlpha = 0.45 * th;
+        const outer = snap(L * (0.3 + 0.7 * Math.sqrt(k)));
+        const inner = snap(L * 0.72 * k);
+        const inCore = ly >= c0 && ly < c1;
+        const core = inCore ? snap(L * 0.42 * k) : 0;
+        ctx.globalAlpha = 0.4 * th * (0.5 + 0.5 * k);
         ctx.fillStyle = '#3d7cff';
-        rect(p.x - outer, ry, outer, 1);
+        rect(p.x - outer, ly, outer, PX);
         ctx.globalAlpha = 0.85;
         ctx.fillStyle = '#62d6ff';
-        if (inner > 0) rect(p.x - inner, ry, inner, 1);
+        if (inner > 0) rect(p.x - inner, ly, inner, PX);
         ctx.fillStyle = '#eafcff';
-        if (core > 0) rect(p.x - core, ry, core, 1);
+        if (core > 0) rect(p.x - core, ly, core, PX);
         // traînée ténue au bout du jet (lignes centrales)
-        if (ry >= p.core[0] && ry <= p.core[1] && th > 0.3) {
-          const tail = Math.round(L * 0.5 * th);
-          ctx.globalAlpha = 0.22 * th;
-          ctx.fillStyle = '#62d6ff';
-          rect(p.x - outer - tail, ry, tail, 1);
+        if (inCore && th > 0.3) {
+          const tail = snap(L * 0.6 * th);
+          for (let j = 0; j < 3; j++) {
+            ctx.globalAlpha = 0.18 * th * (1 - j / 3);
+            ctx.fillStyle = '#62d6ff';
+            rect(p.x - outer - tail * (j + 1) / 3, ly, tail / 3, PX);
+          }
         }
       }
       ctx.globalAlpha = 1;
@@ -333,7 +392,7 @@ export function drawShip(ctx, x, y, { t = 0, thrust = 0, gear = 0, flip = false,
   }
 
   // 3. Coque pré-rendue
-  ctx.drawImage(bake(small ? 'shipS' : 'shipL', small ? SHIP_SMALL_ROWS : SHIP_ROWS, flip), x, y);
+  put(ctx, bake(small ? 'shipS' : 'shipL', small ? SHIP_SMALL_ROWS : SHIP_ROWS, flip), x, y);
 
   // 4. Tuyères : froides au repos, incandescentes avec la poussée
   {
@@ -353,8 +412,16 @@ export function drawShip(ctx, x, y, { t = 0, thrust = 0, gear = 0, flip = false,
 
   // 5. Feux de navigation clignotants
   for (const [lx, ly, col, ph] of small ? SMALL_LIGHTS : LARGE_LIGHTS) {
-    if (((((t + ph) % 1.1) + 1.1) % 1.1) < 0.12) {
-      ctx.fillStyle = col; rect(lx, ly, 1, 1);
+    const f = ((((t + ph) % 1.1) + 1.1) % 1.1);
+    if (f < 0.22) {
+      // Un éclat fin et un petit halo qui s'éteint en douceur.
+      const k = f < 0.12 ? 1 : 1 - (f - 0.12) / 0.1;
+      ctx.fillStyle = col;
+      ctx.globalAlpha = 0.35 * k;
+      rect(lx - PX, ly - PX, 1 + 2 * PX, 1 + 2 * PX);
+      ctx.globalAlpha = k;
+      rect(lx, ly, 1, 1);
+      ctx.globalAlpha = 1;
     }
   }
 }
@@ -374,7 +441,7 @@ function gearTop(gx) {
 
 // x, y = coin haut gauche ; pose : 'walk' | 'idle' | 'scan' ; t en secondes.
 export function drawAstronaut(ctx, x, y, { t = 0, pose = 'idle', flip = false } = {}) {
-  x = Math.round(x); y = Math.round(y);
+  x = snap(x); y = snap(y);
   // t quelconque (grand, négatif, NaN) : index toujours ramené dans les bornes
   t = Number.isFinite(t) ? t : 0;
   const wrap = (n, m) => ((n % m) + m) % m;
@@ -383,7 +450,7 @@ export function drawAstronaut(ctx, x, y, { t = 0, pose = 'idle', flip = false } 
   else if (pose === 'scan') key = 'scan';
   else key = wrap(t, 1.8) < 1.1 ? 'idle0' : 'idle1';
   if (!ASTRO[key]) key = 'idle0';
-  ctx.drawImage(bake('astro_' + key, ASTRO[key], flip, ASTRO_PALETTE_V2), x, y);
+  put(ctx, bake('astro_' + key, ASTRO[key], flip, ASTRO_PALETTE_V2), x, y);
   if (pose === 'scan') {
     const px = (lx) => (flip ? x + ASTRO_W - 1 - lx : x + lx);
     const on = wrap(t * 4, 1) < 0.55;
@@ -391,13 +458,14 @@ export function drawAstronaut(ctx, x, y, { t = 0, pose = 'idle', flip = false } 
     ctx.fillRect(px(SCAN_LIGHT.x), y + SCAN_LIGHT.y, 1, 1);
     // faisceau du scanner : cône pointillé vers le sol, devant l'astronaute
     if (on) {
-      ctx.globalAlpha = 0.45;
       ctx.fillStyle = '#6fe8ff';
-      for (let i = 1; i <= 7; i++) {
-        const lx = SCAN_LIGHT.x + 1 + i;
-        const y0 = SCAN_LIGHT.y + Math.floor(i * 0.6);
+      const tick = Math.floor(t * 24);
+      for (let i = 1; i <= 7 * K; i++) {
+        const lx = SCAN_LIGHT.x + 1 + i * PX;
+        const y0 = SCAN_LIGHT.y + snap(i * PX * 0.6);
         const h = 1 + Math.floor(i * 0.9);
-        for (let j = 0; j < h; j++) if (wrap(i + j + Math.floor(t * 12), 3) === 0) ctx.fillRect(px(lx), y + y0 + j, 1, 1);
+        ctx.globalAlpha = 0.55 * (1 - i / (8 * K));
+        for (let j = 0; j < h; j++) if (wrap(i + j + tick, 4) === 0) ctx.fillRect(flip ? x + ASTRO_W - lx - PX : x + lx, y + y0 + j * PX, PX, PX);
       }
       ctx.globalAlpha = 1;
     }
