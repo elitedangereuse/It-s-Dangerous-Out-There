@@ -126,7 +126,7 @@ function halo(ctx, cx, cy, r0, r1, color, alpha = 0.35) {
 
 // Texte des repères (numéros des corps…) : la police pixel de l'interface, ombrée.
 function label(ctx, text, x, y, color, size = 7) {
-  ctx.font = `600 ${size}px "Pixelify Sans", monospace`;
+  ctx.font = `600 ${size}px DotGothic16, "Pixelify Sans", monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.fillStyle = 'rgba(4, 4, 20, 0.75)';
@@ -134,6 +134,28 @@ function label(ctx, text, x, y, color, size = 7) {
   ctx.fillStyle = color;
   ctx.fillText(String(text), x, y);
   ctx.textAlign = 'start';
+}
+
+// Numéro d'un corps : plaque sombre cerclée, chiffre clair, bien lisible sur les nébuleuses.
+function bodyTag(ctx, text, x, y, { visible, selected, hover }) {
+  const size = 9;
+  ctx.font = `700 ${size}px DotGothic16, "Pixelify Sans", monospace`;
+  const w = Math.max(9, Math.ceil(ctx.measureText(String(text)).width) + 5);
+  const h = size + 3;
+  const left = snap(x - w / 2);
+  const top = snap(y);
+  const border = selected ? '#ffd27a' : hover ? '#cfe4ff' : visible ? '#7d84f0' : '#4a51ad';
+  ctx.fillStyle = border;
+  ctx.fillRect(left + 1, top, w - 2, h);
+  ctx.fillRect(left, top + 1, w, h - 2);
+  ctx.fillStyle = 'rgba(8, 9, 32, 0.92)';
+  ctx.fillRect(left + 1, top + 1, w - 2, h - 2);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = selected ? '#ffe2a8' : visible ? '#ffffff' : '#aab3e0';
+  ctx.fillText(String(text), left + w / 2, top + h / 2 + 0.5);
+  ctx.textAlign = 'start';
+  ctx.textBaseline = 'top';
 }
 
 // Atmosphère : visuelle uniquement, stable par corps (une partie des corps atterrissables).
@@ -555,8 +577,8 @@ export function createRenderer(canvas) {
         ctx.fillRect(x - PX / 2, y - PX / 2, PX, PX);
         ctx.globalAlpha = 1;
       }
-      const labelY = y + Math.max(r, 4) + 3;
-      label(ctx, body.index, x + 0.5, labelY, visible ? '#e6ecff' : '#8a94c0');
+      const labelY = y + Math.max(r, 4) + 6;
+      bodyTag(ctx, body.index, x + 0.5, labelY, { visible, selected: view.selectedBodyId === body.id, hover: view.hoverBody === body.id });
       if (visible && (body.revealed >= 2 ? body.bio || body.geo || body.feature || body.terraformable : body.hint)) {
         label(ctx, '!', x + 0.5, y - Math.max(r, 4) - 10, Math.sin(t * 5) > 0 ? '#ffd27a' : '#ff9a4a', 8);
       }
