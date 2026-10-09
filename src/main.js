@@ -23,7 +23,7 @@ let profileSaved = '';
 
 function newGame(seed, { intro = true } = {}) {
   state = G.createGame(seed, gameOptions(profile, shipChoice));
-  for (const l of state.log) l.toasted = true;
+  for (const l of state.log) l.at = 0;
   view = {
     scene: 'system',
     sceneStart: performance.now(),
@@ -38,7 +38,6 @@ function newGame(seed, { intro = true } = {}) {
     prev: {},
     unlocked: [],
   };
-  $('#toasts').innerHTML = '';
   if (intro) setScene('jump', { jumpStar: state.system.star });
   else update();
 }
@@ -270,7 +269,7 @@ function gauge(cls, label, v, max, unit = '') {
   let delta = '';
   if (prev != null && Math.abs(prev - v) >= 0.1) {
     const d = round1(v - prev);
-    delta = ` <span class="delta ${d < 0 ? 'neg' : ''}" style="animation: toast-out 0.6s ease-in 1.6s forwards">${d > 0 ? '+' : ''}${d}</span>`;
+    delta = ` <span class="delta ${d < 0 ? 'neg' : ''}" style="animation: fade-out 0.6s ease-in 1.6s forwards">${d > 0 ? '+' : ''}${d}</span>`;
   }
   view.prev[cls] = v;
   return `<div class="gauge ${cls} ${low ? 'low' : ''}" title="${label} : ${round1(v)}${unit} / ${max}${unit}">
@@ -295,20 +294,33 @@ function renderTop() {
   if (!fs.innerHTML) fs.innerHTML = icon('full');
 }
 
-function pushToasts() {
+// Journal vivant : chaque nouvelle ligne s'illumine quelques secondes quand le journal l'affiche ;
+// tant qu'il n'est pas à l'écran, l'onglet Journal compte les lignes non lues.
+const LOG_GLOW_MS = 4000;
+
+function stampLog() {
   // Le bilan de l'écopage attend la fin de sa cinématique.
   if (view.scene === 'scoop') return;
-  const list = $('#toasts');
-  const fresh = state.log.filter((l) => !l.toasted);
-  for (const l of fresh) {
-    l.toasted = true;
-    const li = document.createElement('li');
-    li.className = l.kind;
-    li.innerHTML = `<span>${decorate(esc(l.text))}</span>`;
-    list.appendChild(li);
-    setTimeout(() => li.remove(), 6200);
+  const now = performance.now();
+  for (const l of state.log) {
+    if (l.at != null) continue;
+    l.at = now;
+    l.unread = true;
   }
-  while (list.children.length > 4) list.firstChild.remove();
+}
+
+function renderLogTab(journalShown) {
+  if (journalShown) for (const l of state.log) l.unread = false;
+  const unread = state.log.filter((l) => l.unread);
+  const tab = $('.tabs [data-tab="log"]');
+  if (!tab) return;
+  const key = unread.length ? `${unread.length}|${unread.some((l) => l.kind === 'bad')}` : '';
+  if (tab.dataset.unread === key && tab.innerHTML) return;
+  tab.dataset.unread = key;
+  const badge = unread.length
+    ? `<span class="badge ${unread.some((l) => l.kind === 'bad') ? 'bad' : ''}" title="${unread.length} nouvelle(s) entrée(s)">${unread.length > 9 ? '9+' : unread.length}</span>`
+    : '';
+  tab.innerHTML = `Journal${badge}${kbd('J')}`;
 }
 
 // --- Panneau : système ---
@@ -695,10 +707,18 @@ function modulesPanel() {
 }
 
 function logPanel(title = 'Journal de bord') {
+  // Le journal est à l'écran : les lignes non lues s'illuminent maintenant, pas à leur arrivée.
+  const now = performance.now();
+  for (const l of state.log) if (l.unread) Object.assign(l, { unread: false, at: now });
   return `<h2>${title}</h2><ol class="log">${state.log
-    .slice()
+    .filter((l) => l.at != null)
     .reverse()
-    .map((l) => `<li class="${l.kind}"><span class="j">S${l.jump}</span>${decorate(esc(l.text))}</li>`)
+    .map((l) => {
+      // Délai négatif : l'illumination reprend où elle en était quand le panneau est redessiné.
+      const age = performance.now() - l.at;
+      const glow = l.at && age < LOG_GLOW_MS ? ` fresh" style="animation-delay:-${Math.round(age)}ms` : '';
+      return `<li class="${l.kind}${glow}"><span class="j">S${l.jump}</span>${decorate(esc(l.text))}</li>`;
+    })
     .join('')}</ol>`;
 }
 
@@ -1015,7 +1035,7 @@ function update() {
   if ((state.phase === 'victory' || state.phase === 'gameover') && !isCinematic()) view.scene = 'end';
   if (view.mode === 'nav' && state.phase !== 'system') view.mode = 'system';
   if (view.scene !== 'title') {
-    pushToasts();
+    stampLog();
     view.unlocked.push(...absorbRun(profile, state));
     const json = JSON.stringify(profile);
     if (json !== profileSaved) {
@@ -1094,6 +1114,7 @@ function update() {
   }
 
   renderDocks();
+  renderLogTab(view.tab === 'log' || view.scene === 'end' || !$('#journal').hidden);
   if (showNav) drawNavmap();
 }
 
@@ -1174,9 +1195,7 @@ function act(name) {
       return newGame(Math.floor(Math.random() * 1e9));
     }
     case 'retry': return newGame(state.seed);
-    case 'menu':
-      $('#toasts').innerHTML = '';
-      return showTitle();
+    case 'menu': return showTitle();
   }
   if (state.phase === 'gameover') return setScene('end');
   update();
