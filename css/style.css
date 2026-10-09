@@ -410,6 +410,61 @@ button > .ico:first-child { margin-right: 6px; }
 }
 .cine-title .ico { width: 14px; height: 14px; color: var(--event); }
 
+/* Cinématique d'écopage : HUD par-dessus la plongée dans la couronne (animé par tickScoopHud). */
+.overlay.scoop { container-type: size; animation: none; }
+.scoop-hud {
+  position: absolute; inset: 0;
+  font-family: var(--font);
+  font-size: clamp(10px, 2.3cqw, 17px);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.85);
+}
+.sh-title { position: absolute; left: 3.5%; top: 5%; display: grid; gap: 0.15em; justify-items: start; }
+.sh-title .eyebrow {
+  display: inline-flex; align-items: center; gap: 0.4em;
+  font-size: 1.7em; font-weight: 400; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--fuel); animation: rise 0.5s var(--ease) both;
+}
+.sh-title .eyebrow .ico { width: 0.8em; height: 0.8em; filter: drop-shadow(0 0 6px var(--fuel)); }
+.sh-title b { color: var(--ink); font-weight: 600; animation: rise 0.5s var(--ease) 0.1s both; }
+.sh-title span:last-child { color: var(--muted); font-size: 0.85em; animation: rise 0.5s var(--ease) 0.2s both; }
+.sh-gauges { position: absolute; right: 3.5%; top: 5%; display: grid; gap: 0.7em; width: 30%; animation: rise 0.5s var(--ease) 0.15s both; }
+.scoop-hud .gauge { width: auto; }
+.scoop-hud .gauge .ico { width: 1.1em; height: 1.1em; }
+.scoop-hud .gauge .lbl { font-size: 0.85em; }
+.scoop-hud .gauge .track { height: 0.8em; min-height: 10px; }
+.scoop-hud .gauge .track i { transition: none; }
+/* Le niveau d'avant l'écopage reste visible en sombre sous le plein qui monte. */
+.scoop-hud .gauge .track b { position: absolute; inset: 2px auto 2px 2px; background: color-mix(in srgb, var(--c) 40%, #120d2a); }
+.gauge.heat { --c: #ff9a3a; --c-hi: #ffd27a; --c-lo: #e0602a; }
+.scoop-hud.hot .gauge.heat { --c: #ff5a3a; --c-hi: #ffb08a; --c-lo: #c0302a; }
+.scoop-hud.hot .gauge.heat .lbl span:last-child { color: #ffb08a; }
+.sh-alarm {
+  position: absolute; left: 50%; top: 27%; transform: translateX(-50%);
+  margin: 0; padding: 0.35em 1.2em;
+  display: inline-flex; align-items: center; gap: 0.6em;
+  font-size: 1.35em; font-weight: 400; letter-spacing: 0.2em; text-transform: uppercase; white-space: nowrap;
+  color: #fff; background: #8a0c1c;
+  clip-path: var(--step2);
+  box-shadow: inset 0 0 0 2px #ff5a4a;
+  animation: alarm 0.36s steps(1) infinite;
+}
+.sh-alarm .ico { width: 0.9em; height: 0.9em; color: var(--event); }
+@keyframes alarm { 50% { background: #2a0408; color: #ff6b81; } }
+.sh-result {
+  position: absolute; left: 0; right: 0; top: 30%;
+  display: grid; justify-items: center; gap: 0.3em;
+}
+.sh-result b {
+  font-size: 3.4em; font-weight: 700; line-height: 1;
+  color: #ffe28a;
+  text-shadow: 0 3px 0 #000, 0 0 18px rgba(255, 180, 80, 0.75);
+  animation: pop 0.45s cubic-bezier(0.3, 1.8, 0.5, 1) both;
+}
+.sh-result span { color: var(--ink); animation: rise 0.4s var(--ease) 0.15s both; }
+.sh-result .bad { color: var(--bad); animation-delay: 0.25s; }
+.scoop-hud.done .sh-gauges, .scoop-hud.done .sh-title { opacity: 0.5; transition: opacity 0.4s; }
+@keyframes pop { from { opacity: 0; transform: scale(2.2); } 60% { opacity: 1; } }
+
 /* ---------- Barre d'actions ---------- */
 
 .dock {
