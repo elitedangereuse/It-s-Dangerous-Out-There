@@ -293,8 +293,8 @@ function renderTop() {
   if (!fs.innerHTML) fs.innerHTML = icon('full');
 }
 
-// Journal vivant : chaque nouvelle ligne s'illumine quelques secondes à son arrivée ;
-// tant que le journal n'est pas à l'écran, l'onglet Journal compte les lignes non lues.
+// Journal vivant : chaque nouvelle ligne s'illumine quelques secondes quand le journal l'affiche ;
+// tant qu'il n'est pas à l'écran, l'onglet Journal compte les lignes non lues.
 const LOG_GLOW_MS = 4000;
 
 function stampLog() {
@@ -703,6 +703,9 @@ function modulesPanel() {
 }
 
 function logPanel(title = 'Journal de bord') {
+  // Le journal est à l'écran : les lignes non lues s'illuminent maintenant, pas à leur arrivée.
+  const now = performance.now();
+  for (const l of state.log) if (l.unread) Object.assign(l, { unread: false, at: now });
   return `<h2>${title}</h2><ol class="log">${state.log
     .slice()
     .reverse()
