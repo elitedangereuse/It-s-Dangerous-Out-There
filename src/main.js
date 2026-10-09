@@ -310,6 +310,7 @@ function renderLogTab(journalShown) {
   if (journalShown) for (const l of state.log) l.unread = false;
   const unread = state.log.filter((l) => l.unread);
   const tab = $('.tabs [data-tab="log"]');
+  if (!tab) return;
   const key = unread.length ? `${unread.length}|${unread.some((l) => l.kind === 'bad')}` : '';
   if (tab.dataset.unread === key && tab.innerHTML) return;
   tab.dataset.unread = key;
