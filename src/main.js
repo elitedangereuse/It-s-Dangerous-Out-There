@@ -133,6 +133,7 @@ const phoneLandscape = matchMedia('(orientation: landscape) and (max-height: 540
 // dans la barre d'actions, toujours visible, au lieu du bas du panneau.
 const phoneUI = matchMedia('(orientation: landscape) and (max-height: 540px)');
 phoneUI.addEventListener('change', () => view && update());
+document.addEventListener('fullscreenchange', () => view && update());
 
 function placeTip() {
   const tip = $('#tip');
@@ -148,6 +149,11 @@ function placeTip() {
   tip.style.left = `${(l.x / W) * 100}%`;
   tip.style.top = `${((l.y - Math.max(l.r, 4) - 2) / H) * 100}%`;
   tip.hidden = false;
+  // Garde la bulle entière dans la scène (corps proches du bord, petit écran).
+  const sw = tip.parentElement.clientWidth;
+  const half = tip.offsetWidth / 2;
+  const x = Math.min(Math.max((l.x / W) * sw, half + 4), sw - half - 4);
+  tip.style.left = `${x}px`;
 }
 
 function selectBody(id) {
@@ -173,6 +179,7 @@ const kbd = (k) => (k ? `<kbd>${k}</kbd>` : '');
 // ---------- Icônes en pixels (8×8, couleur courante) ----------
 
 const ICON_BITMAPS = {
+  full: ['###..###', '#......#', '#......#', '........', '........', '#......#', '#......#', '###..###'],
   fuel: ['...##...', '...##...', '..####..', '.######.', '.####.#.', '.####.#.', '..####..', '........'],
   bolt: ['....###.', '...###..', '..###...', '.######.', '...###..', '..###...', '..##....', '.#......'],
   hull: ['.######.', '########', '###..###', '###..###', '.######.', '..####..', '...##...', '........'],
@@ -244,6 +251,9 @@ function renderTop() {
   const s = state.ship;
   $('#gauges').innerHTML =
     gauge('fuel', 'Carburant', s.fuel, s.fuelMax, ' t') + gauge('hull', 'Coque', s.hull, s.hullMax) + gauge('energy', 'Énergie', s.energy, s.energyMax);
+  const fs = $('#fs');
+  fs.hidden = !(phoneUI.matches && canFullscreen() && !document.fullscreenElement);
+  if (!fs.innerHTML) fs.innerHTML = icon('full');
 }
 
 function pushToasts() {
@@ -289,9 +299,9 @@ function bodyDetail(b) {
   const def = BODY_TYPES[b.type];
   const chips = [];
   let text;
-  if (b.revealed === 0) text = '<p>Signal non identifié. Un scan est nécessaire pour savoir ce que c\'est.</p>';
+  if (b.revealed === 0) text = phoneUI.matches ? `<p><span class="title">Signal ${b.index}</span><br><span class="muted">Non identifié : scannez-le.</span></p>` : '<p>Signal non identifié. Un scan est nécessaire pour savoir ce que c\'est.</p>';
   else {
-    text = `<p><span class="title">${esc(b.name)}</span><br><span class="muted">${def.name} · ${b.ls} secondes-lumière</span></p>`;
+    text = `<p><span class="title">${esc(b.name)}</span><br><span class="muted">${def.name} · ${b.ls} ${phoneUI.matches ? 'sl' : 'secondes-lumière'}</span></p>`;
     chips.push(b.landable ? '<span class="chip good">Atterrissable</span>' : '<span class="chip">Pas de surface accessible</span>');
     if (b.revealed >= 2) {
       if (b.terraformable) chips.push('<span class="chip event">Terraformable</span>');
@@ -304,7 +314,7 @@ function bodyDetail(b) {
       text += `<p class="muted mat-line">Matériaux : ${mats}</p>`;
     } else {
       if (b.hint) chips.push('<span class="chip event">Signal détecté</span>');
-      text += '<p class="muted">Un scan détaillé révèle matériaux, signaux et anomalies.</p>';
+      if (!phoneUI.matches) text += '<p class="muted">Un scan détaillé révèle matériaux, signaux et anomalies.</p>';
     }
     if (b.landed) chips.push('<span class="chip cyan">Visité</span>');
   }
@@ -323,6 +333,16 @@ function systemPanel() {
   for (const r of sys.regions || []) chips.push(`<span class="chip bad">${REGION_TYPES[r].name}</span>`);
   const unknown = sys.bodies.every((b) => b.revealed === 0);
   const sel = sys.bodies.find((b) => b.id === view.selectedBodyId);
+  // Téléphone : la scène sert de liste (corps numérotés). Le panneau montre le corps choisi,
+  // et une rangée de numéros pour passer d'un corps à l'autre.
+  if (phoneUI.matches) {
+    const nums = sys.bodies.map((b) => `<button class="num ${b.id === view.selectedBodyId ? 'sel' : ''} ${b.revealed === 0 ? 'unknown' : ''}" data-body="${b.id}">${b.index}</button>`).join('');
+    return `
+    <div class="sys-head"><h2>${esc(sys.name)}</h2>${chips.join('')}</div>
+    ${scanning ? '<p class="scanning">Scan en cours…</p>' : ''}
+    ${sel ? bodyDetail(sel) : `<p class="muted hint">${unknown ? 'Système inconnu : lancez un scan, ou touchez un signal.' : 'Touchez un corps pour l\'examiner.'}</p>`}
+    <div class="nums">${nums}</div>`;
+  }
   return `
     <h2>${esc(sys.name)}</h2>
     <div class="chips">${chips.join('')}</div>
@@ -348,8 +368,8 @@ function surfacePanel() {
   return `
     <h2>${esc(b.name)}</h2>
     <p class="sub">${BODY_TYPES[b.type].name} · ${bodyAtmosphere(b) ? 'atmosphère ténue' : 'sans atmosphère'}</p>
-    <p>${bodyAtmosphere(b) ? 'Le commandant descend la rampe. Le vent siffle contre la visière.' : 'Le commandant descend la rampe. Le silence est total.'}</p>
-    ${sf.analyzed ? `<h3>Relevés</h3><div class="chips">${found.join('') || '<span class="chip">Rien de notable</span>'}</div>` : '<div class="empty">Analysez la surface pour repérer la vie, les évents et les anomalies.</div>'}
+    ${phoneUI.matches ? '' : `<p>${bodyAtmosphere(b) ? 'Le commandant descend la rampe. Le vent siffle contre la visière.' : 'Le commandant descend la rampe. Le silence est total.'}</p>`}
+    ${sf.analyzed ? `<h3>Relevés</h3><div class="chips">${found.join('') || '<span class="chip">Rien de notable</span>'}</div>` : (phoneUI.matches ? '' : '<div class="empty">Analysez la surface pour repérer la vie, les évents et les anomalies.</div>')}
     <h3>Matériaux possibles</h3>
     <p class="muted mat-line">${matNames(b.mats) || '—'}</p>`;
 }
@@ -393,7 +413,7 @@ function navPanel() {
     <h2>Navigation</h2>
     <p class="sub">Portée ${state.effectiveRange.toFixed(1)} al · ${round1(state.ship.fuel)} t de carburant</p>
     <div class="cands">${list}</div>
-    <p class="legend">${icon('fuel')} étoile écopable · ${icon('bolt')} jet de suralimentation · en vert : distance gagnée vers la destination. ${touchUI.matches ? '' : 'Double-clic pour sauter directement.'}</p>`;
+    ${phoneUI.matches ? '' : `<p class="legend">${icon('fuel')} étoile écopable · ${icon('bolt')} jet de suralimentation · en vert : distance gagnée vers la destination. ${touchUI.matches ? '' : 'Double-clic pour sauter directement.'}</p>`}`;
 }
 
 function jumpAction(sel) {
@@ -616,7 +636,7 @@ function modulesPanel() {
   const repair = RECIPES.find((r) => r.id === 'module');
   return `
     <h2>${esc(s.name)}</h2>
-    <p class="sub">${esc(SHIPS[s.model].maker)} · ${esc(SHIPS[s.model].desc)}</p>
+    ${phoneUI.matches ? '' : `<p class="sub">${esc(SHIPS[s.model].maker)} · ${esc(SHIPS[s.model].desc)}</p>`}
     <h3>Modules</h3>
     <div class="modules">${mods}</div>
     ${Object.values(s.modules).some((v) => v < 100) ? `<p class="muted mat-line">Réparation en <b>synthèse</b> ${kbd('Y')} : ${Object.entries(repair.cost).map(([m, n]) => mat(m, n, (s.materials[m] || 0) < n ? 'miss' : '')).join(' ')} pour +${state.passenger === 'engineer' ? 60 : 40} % au module le plus abîmé${G.canSynthesize(state, repair) ? '' : ' (matériaux insuffisants)'}.</p>` : ''}
@@ -647,7 +667,7 @@ function actionButton(a) {
   if (a.sep) return '<span class="sep"></span>';
   if (a.hint) return `<span class="hint">${a.hint}</span>`;
   const attrs = Object.entries(a.data || {}).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ');
-  return `<button class="${a.primary ? 'primary' : ''}" ${a.act ? `data-act="${a.act}"` : ''} ${a.key ? `data-key="${esc(a.key)}"` : ''} ${attrs} ${a.disabled ? 'disabled' : ''} title="${esc(a.why || '')}">${a.icon || ''}${esc(a.label)}${a.cost ? `<span class="cost">${a.cost}</span>` : ''}${kbd(a.key)}${a.why && a.inlineWhy !== false ? `<span class="why">${esc(a.why)}</span>` : ''}</button>`;
+  return `<button class="${a.primary ? 'primary' : ''}" ${a.act ? `data-act="${a.act}"` : ''} ${a.key ? `data-key="${esc(a.key)}"` : ''} ${attrs} ${a.disabled ? 'disabled' : ''} title="${esc(a.why || '')}">${a.icon || ''}${esc(phoneUI.matches && a.short ? a.short : a.label)}${a.cost ? `<span class="cost">${a.cost}</span>` : ''}${kbd(a.key)}${a.why && a.inlineWhy !== false ? `<span class="why">${esc(a.why)}</span>` : ''}</button>`;
 }
 
 function bodyActions(b) {
@@ -658,7 +678,7 @@ function bodyActions(b) {
     let why = '';
     if (state.ship.modules.scanner < 25) why = 'Scanner trop endommagé';
     else if (state.ship.energy < scanCost) why = 'Énergie insuffisante';
-    acts.push({ act: 'manual', icon: icon('scope'), label: 'Scan détaillé', cost: `${scanCost}${icon('bolt')}`, disabled: !!why, why, key: 'M' });
+    acts.push({ act: 'manual', icon: icon('scope'), label: 'Scan détaillé', short: 'Scan corps', cost: `${scanCost}${icon('bolt')}`, disabled: !!why, why, key: 'M' });
   }
   if (b.landable && b.revealed > 0) {
     const check = G.canLand(state, b);
@@ -667,17 +687,20 @@ function bodyActions(b) {
   return acts;
 }
 
+// Libellés courts des actions de surface pour la barre d'actions du téléphone.
+const SURFACE_SHORT = { analyze: 'Analyser', harvest: 'Ressources', sample: 'Échantillons', feature: 'Explorer', geo: 'Évents', takeoff: 'Décoller' };
+
 function dockActions() {
   if (view.scene === 'title') return [];
   if (isCinematic()) return [{ act: 'skip', label: 'Passer', key: 'Espace' }];
   if (view.scene === 'end') {
     return [
       { act: 'new', icon: icon('jump'), label: 'Nouvelle partie', primary: true, key: 'Entrée' },
-      { act: 'retry', label: 'Rejouer cette graine', key: 'R' },
-      { act: 'menu', label: 'Retour au menu principal', key: 'M' },
+      { act: 'retry', label: 'Rejouer cette graine', short: 'Rejouer', key: 'R' },
+      { act: 'menu', label: 'Retour au menu principal', short: 'Menu', key: 'M' },
     ];
   }
-  if (state.phase === 'event' || view.scoopPick) return [{ hint: 'Décision requise : choisissez une option dans la fenêtre.' }];
+  if (state.phase === 'event' || view.scoopPick) return [{ hint: phoneUI.matches ? 'Décision requise' : 'Décision requise : choisissez une option dans la fenêtre.' }];
   const back = { act: 'back', icon: icon('back'), label: 'Retour', key: 'Échap' };
   if (view.mode === 'synth') return [back];
   if (view.mode === 'nav') {
@@ -697,6 +720,7 @@ function dockActions() {
           data: { surf: a.id },
           icon: takeoff ? icon('takeoff') : a.done ? icon('check') : '',
           label: takeoff ? 'Décoller' : a.label,
+          short: SURFACE_SHORT[a.id],
           cost: a.cost ? `${a.cost}${icon('bolt')}` : '',
           disabled: a.done || low,
           why: low ? 'Énergie insuffisante' : '',
@@ -717,9 +741,9 @@ function dockActions() {
     acts.push(...bodyActions(b));
   }
   if (!(phoneUI.matches && sys.autoScanned)) acts.push(
-    { act: 'auto', icon: icon('radar'), label: 'Scan du système', cost: `${G.COSTS.autoScan}${icon('bolt')}`, disabled: sys.autoScanned || state.ship.energy < G.COSTS.autoScan, why: sys.autoScanned ? 'Déjà fait' : '', inlineWhy: false, key: 'A', primary: !sys.autoScanned },
+    { act: 'auto', icon: icon('radar'), label: 'Scan du système', short: 'Scanner', cost: `${G.COSTS.autoScan}${icon('bolt')}`, disabled: sys.autoScanned || state.ship.energy < G.COSTS.autoScan, why: sys.autoScanned ? 'Déjà fait' : '', inlineWhy: false, key: 'A', primary: !sys.autoScanned },
   );
-  if (star.scoopable) acts.push({ act: 'scoop', icon: icon('fuel'), label: sys.scooped ? 'Écopage fait' : 'Écoper', disabled: !G.canScoop(state), key: 'E' });
+  if (star.scoopable) acts.push({ act: 'scoop', icon: icon('fuel'), label: sys.scooped ? 'Écopage fait' : 'Écoper', short: sys.scooped ? 'Écopé' : 'Écoper', disabled: !G.canScoop(state), key: 'E' });
   if (star.boost) acts.push({ act: 'boost', icon: icon('bolt'), label: `Jet ×${star.boost}`, cost: 'dégâts', disabled: !G.canBoost(state), key: 'B' });
   acts.push({ sep: true }, synth, { act: 'nav', icon: icon('compass'), label: 'Navigation', key: 'N', primary: sys.autoScanned });
   return acts;
@@ -961,7 +985,7 @@ function update() {
     panel.classList.add('enter');
   }
 
-  $('#dock').innerHTML = dockActions().map(actionButton).join('');
+  $('#dock').innerHTML = dockActions().filter((a) => !(phoneUI.matches && a.sep)).map(actionButton).join('');
   if (showNav) drawNavmap();
 }
 
@@ -969,8 +993,10 @@ function update() {
 
 // Sur téléphone et tablette, le départ passe en plein écran et verrouille le paysage
 // quand le navigateur le permet (Android ; iPhone ignore, l'écran « Tournez » prend le relais).
+const canFullscreen = () => matchMedia('(pointer: coarse)').matches && !!document.documentElement.requestFullscreen && document.fullscreenEnabled !== false;
+
 function goFullscreenLandscape() {
-  if (!matchMedia('(pointer: coarse)').matches || document.fullscreenElement) return;
+  if (!canFullscreen() || document.fullscreenElement) return;
   const el = document.documentElement;
   if (!el.requestFullscreen) return;
   el.requestFullscreen({ navigationUI: 'hide' })
@@ -1025,6 +1051,7 @@ function act(name) {
     case 'jump': return doJump(view.navSel);
     case 'nav': view.mode = 'nav'; view.tab = 'ctx'; break;
     case 'synth': view.mode = 'synth'; view.tab = 'ctx'; break;
+    case 'fullscreen': goFullscreenLandscape(); break;
     case 'back': view.mode = 'system'; break;
     case 'close':
       G.closeEvent(state);
