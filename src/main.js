@@ -132,7 +132,21 @@ const phoneLandscape = matchMedia('(orientation: landscape) and (max-height: 540
 // Téléphone en paysage (même requête que dans style.css) : les actions du corps choisi passent
 // dans la barre d'actions, toujours visible, au lieu du bas du panneau.
 const phoneUI = matchMedia('(orientation: landscape) and (max-height: 540px)');
-phoneUI.addEventListener('change', () => view && update());
+phoneUI.addEventListener('change', () => { placeBars(); if (view) update(); });
+
+// Téléphone en paysage : la barre du voyage passe au-dessus de la scène et les jauges en dessous,
+// dans la colonne centrale. Ailleurs, elles restent dans la barre du haut.
+function placeBars() {
+  const top = $('.topbar');
+  if (phoneUI.matches) {
+    $('.stage-wrap').prepend(top);
+    $('.stage-wrap').append($('#gauges'));
+  } else {
+    document.body.prepend(top);
+    top.insertBefore($('#gauges'), $('#fs'));
+  }
+}
+placeBars();
 document.addEventListener('fullscreenchange', () => view && update());
 
 // Hauteur réellement visible, recalculée à chaque changement (barre d'adresse, plein écran,
