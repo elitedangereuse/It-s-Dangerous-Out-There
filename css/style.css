@@ -991,27 +991,40 @@ button > .ico:first-child { margin-right: 6px; }
     height: var(--app-h, 100dvh);
     display: grid;
     grid-template-columns: var(--lcol) minmax(0, 1fr) var(--rcol);
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
     grid-template-areas:
-      'journal top   tabs'
-      'journal stage panel'
+      'journal stage tabs'
       'journal stage panel'
       'ldock   stage dock';
     gap: 5px 6px;
     padding: var(--pad-t) var(--pad-r) var(--pad-b) var(--pad-l);
   }
   .layout, .stage-col, .side { display: contents; }
-  .stage-wrap { grid-area: stage; display: grid; place-items: center; min-width: 0; min-height: 0; container-type: size; }
+  /* Colonne centrale : progression du voyage, scène, jauges, empilées et centrées (main.js déplace
+     la barre d'état et les jauges dans .stage-wrap). Elles prennent la largeur de la scène. */
+  .stage-wrap {
+    --bars: 74px; /* barre du voyage + jauges + espacements */
+    grid-area: stage;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+    min-height: 0;
+    container-type: size;
+  }
+  .stage-wrap > * { --sw: min(calc(100cqw - 12px), calc((100cqh - 12px - var(--bars)) * 16 / 9)); flex: none; }
 
-  /* Barre d'état au-dessus de la scène */
+  /* Barre du voyage au-dessus de la scène */
   .topbar {
-    grid-area: top;
-    height: auto;
+    width: calc(var(--sw) + 12px);
+    height: 28px;
     margin: 0;
-    padding: 3px 6px;
+    padding: 0 8px;
     border: 0;
     gap: 8px;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     background: rgba(8, 9, 32, 0.7);
     clip-path: var(--step2);
     backdrop-filter: none;
@@ -1019,15 +1032,26 @@ button > .ico:first-child { margin-right: 6px; }
   }
   .logo { display: none; }
   .route { gap: 6px; font-size: 0.92em; }
-  .route .end.muted, .route .track-wrap { display: none; }
-  .route .end.goal { font-size: 0.95em; }
-  .route .stats { padding: 0 4px; background: none; }
-  .gauges { gap: 8px; }
-  .gauge { width: 66px; grid-template-columns: auto auto minmax(12px, 1fr); column-gap: 4px; }
-  .gauge > .ico[class] { grid-row: auto; }
-  .gauge .lbl { font-size: 0.95em; }
-  .gauge .lbl span:first-child, .gauge .delta { display: none; }
-  .gauge .track { margin-top: 0; height: 8px; }
+  .route .end.muted { max-width: 22%; }
+  .route .end.muted .ico { display: none; }
+  .route .track-wrap { flex: 1 1 60px; min-width: 50px; margin: 0 10px 0 14px; }
+  .route .end.goal { max-width: 34%; }
+  .route .stats { padding: 0 2px; background: none; }
+
+  /* Jauges sous la scène, sur toute sa largeur */
+  .gauges {
+    width: calc(var(--sw) + 12px);
+    height: 28px;
+    gap: 10px;
+    padding: 0 8px;
+    align-items: center;
+    background: rgba(8, 9, 32, 0.7);
+    clip-path: var(--step2);
+  }
+  .gauge { flex: 1 1 0; width: auto; min-width: 0; column-gap: 6px; }
+  .gauge .lbl { font-size: 0.9em; }
+  .gauge .track { margin-top: 2px; height: 8px; }
+  .gauge .delta { top: auto; bottom: calc(100% + 2px); }
   .fs {
     width: 28px;
     height: 24px;
@@ -1043,7 +1067,7 @@ button > .ico:first-child { margin-right: 6px; }
   /* Scène au centre */
   .stage {
     margin: 0;
-    width: min(calc(100cqw - 12px), calc((100cqh - 12px) * 16 / 9));
+    width: var(--sw);
     box-shadow: 0 0 0 6px rgba(4, 5, 24, 0.2), 0 0 40px rgba(110, 100, 255, 0.2);
   }
   .stage::after { inset: -6px; border-width: 8px; border-image: var(--f-stage) 6 / 8px stretch; }
@@ -1191,7 +1215,8 @@ button > .ico:first-child { margin-right: 6px; }
 
 @media (orientation: landscape) and (max-height: 330px) {
   html, body { font-size: 12px; }
-  .gauge { width: 66px; }
+  .stage-wrap { --bars: 66px; gap: 4px; }
+  .topbar, .gauges { height: 24px; }
   .dock button { min-height: 30px; }
 }
 
