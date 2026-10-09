@@ -946,14 +946,17 @@ button > .ico:first-child { margin-right: 6px; }
 }
 
 /* ---------- Téléphone en paysage ----------
-   Tout tient dans l'écran, sans défilement de page. La scène occupe toute la hauteur à gauche,
-   avec la barre d'état posée dessus comme un HUD ; à droite, les actions (deux colonnes,
-   libellés courts), les onglets et un panneau condensé. Pensé pour la hauteur réelle d'un
-   téléphone Android avec la barre d'adresse de Chrome (300 à 360 px). */
+   Tout tient dans l'écran, sans défilement de page, pensé pour la hauteur réelle d'un téléphone
+   Android avec la barre d'adresse de Chrome (300 à 360 px). Trois colonnes :
+   - au centre, la barre d'état puis la scène, la plus grande possible ;
+   - à gauche, le journal, avec les actions d'appoint en bas sous le pouce gauche ;
+   - à droite, le panneau (Système / Modules), avec les actions du voyage sous le pouce droit. */
 
 @media (orientation: landscape) and (max-height: 540px) {
   :root {
-    --side: clamp(220px, 31vw, 300px);
+    --lcol: clamp(110px, 17vw, 200px);
+    --rcol: clamp(150px, 23vw, 240px);
+    --side: var(--rcol);
     --pad-t: max(4px, env(safe-area-inset-top));
     --pad-b: max(4px, env(safe-area-inset-bottom));
     --pad-l: max(6px, env(safe-area-inset-left));
@@ -964,42 +967,40 @@ button > .ico:first-child { margin-right: 6px; }
     min-height: 0;
     height: 100dvh;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) var(--side);
-    grid-template-rows: auto auto minmax(0, 1fr);
-    grid-template-areas: 'stage dock' 'stage tabs' 'stage panel';
-    gap: 5px 8px;
+    grid-template-columns: var(--lcol) minmax(0, 1fr) var(--rcol);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'journal top   tabs'
+      'journal stage panel'
+      'journal stage panel'
+      'ldock   stage dock';
+    gap: 5px 6px;
     padding: var(--pad-t) var(--pad-r) var(--pad-b) var(--pad-l);
   }
   .layout, .stage-col, .side { display: contents; }
-  .stage-wrap { grid-area: stage; display: grid; place-items: end center; min-width: 0; min-height: 0; container-type: size; }
+  .stage-wrap { grid-area: stage; display: grid; place-items: center; min-width: 0; min-height: 0; container-type: size; }
 
-  /* Barre d'état en HUD, en haut de la scène (ou au-dessus quand la scène laisse de la place) */
+  /* Barre d'état au-dessus de la scène */
   .topbar {
-    grid-area: stage;
-    align-self: start;
-    justify-self: center;
-    z-index: 6;
+    grid-area: top;
     height: auto;
-    width: calc(100% - 14px);
-    margin: 7px 0 0;
-    padding: 2px 6px;
+    margin: 0;
+    padding: 3px 6px;
     border: 0;
     gap: 8px;
     grid-template-columns: minmax(0, 1fr) auto auto;
-    background: linear-gradient(180deg, rgba(4, 5, 24, 0.82), rgba(4, 5, 24, 0.55));
+    background: rgba(8, 9, 32, 0.7);
     clip-path: var(--step2);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    pointer-events: none;
   }
-  .topbar .fs { pointer-events: auto; }
   .logo { display: none; }
   .route { gap: 6px; font-size: 0.92em; }
   .route .end.muted, .route .track-wrap { display: none; }
   .route .end.goal { font-size: 0.95em; }
-  .route .stats { padding: 0 6px; background: none; }
-  .gauges { gap: 10px; }
-  .gauge { width: 74px; grid-template-columns: auto auto minmax(16px, 1fr); column-gap: 4px; }
+  .route .stats { padding: 0 4px; background: none; }
+  .gauges { gap: 8px; }
+  .gauge { width: 66px; grid-template-columns: auto auto minmax(12px, 1fr); column-gap: 4px; }
   .gauge > .ico { grid-row: auto; }
   .gauge .lbl { font-size: 0.95em; }
   .gauge .lbl span:first-child, .gauge .delta { display: none; }
@@ -1016,34 +1017,38 @@ button > .ico:first-child { margin-right: 6px; }
   }
   .fs .ico { margin: 0 !important; width: 12px; height: 12px; }
 
-  /* Scène : la plus grande possible */
+  /* Scène au centre */
   .stage {
-    margin: 0 0 6px;
+    margin: 0;
     width: min(calc(100cqw - 12px), calc((100cqh - 12px) * 16 / 9));
     box-shadow: 0 0 0 6px rgba(4, 5, 24, 0.2), 0 0 40px rgba(110, 100, 255, 0.2);
   }
   .stage::after { inset: -6px; border-width: 8px; border-image: var(--f-stage) 6 / 8px stretch; }
   .tip { font-size: 0.85em; }
-  .toasts { left: 6px; bottom: 6px; gap: 3px; max-width: 75%; }
+  .toasts { left: 6px; bottom: 6px; gap: 3px; max-width: 80%; }
   .toasts li { font-size: 0.82em; padding: 2px 8px 3px; }
   .toasts li:nth-last-child(n + 3) { display: none; }
 
-  /* Colonne de droite : actions en deux colonnes */
+  /* Actions : une colonne de chaque côté, en bas, l'action principale au plus près du pouce */
+  .dock { grid-area: dock; }
+  .dock-left { grid-area: ldock; }
   .dock {
-    grid-area: dock;
     min-height: 0;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: stretch;
+    flex-wrap: nowrap;
     gap: 4px;
-    align-content: start;
   }
+  .dock:empty { display: none; }
   .dock button {
     display: inline-flex;
     flex-wrap: nowrap;
     align-items: center;
     justify-content: center;
     text-align: center;
-    min-height: 32px;
+    min-height: 36px;
     padding: 0 2px;
     border-width: 6px;
     border-image-width: 6px;
@@ -1051,17 +1056,25 @@ button > .ico:first-child { margin-right: 6px; }
     line-height: 1.15;
     white-space: nowrap;
   }
-  .dock button:only-child, .dock button:last-child:nth-child(odd) { grid-column: 1 / -1; }
   .dock button:has(.why) { flex-wrap: wrap; }
   .dock button .why { flex-basis: 100%; white-space: normal; }
   .dock button > .ico:first-child { margin-right: 4px; width: 14px; height: 14px; }
   .dock button .cost { margin-left: 4px; padding: 0 3px; }
   .dock .sep { display: none; }
-  .dock .hint { grid-column: 1 / -1; padding: 6px 8px; font-size: 0.95em; justify-content: center; }
+  .dock .hint { padding: 6px; font-size: 0.95em; justify-content: center; white-space: normal; text-align: center; }
+
+  /* Colonne de gauche : journal */
+  .journal { grid-area: journal; min-height: 0; }
+  .journal h2 { font-size: 0.95em; letter-spacing: 1px; text-transform: uppercase; color: var(--violet); text-shadow: none; }
+  .journal .log li { font-size: 0.9em; }
+
+  /* Colonne de droite : onglets Système / Modules et panneau */
   .tabs { grid-area: tabs; }
+  .tabs [data-tab='log'] { display: none; }
   .tabs button { padding: 3px 2px 4px; font-size: 0.95em; }
   .tabs button[aria-selected='true'] { border-width: 6px; border-image-width: 6px; }
   .panel { grid-area: panel; padding: 2px 4px 6px; border-width: 6px; border-image-width: 6px; max-height: none; }
+  .journal.panel { grid-area: journal; }
 
   /* Panneau condensé */
   .panel h2 { font-size: 1.1em; margin-bottom: 4px; }
@@ -1076,10 +1089,12 @@ button > .ico:first-child { margin-right: 6px; }
   .panel .hint { margin: 2px 0 6px; }
   .sys-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 4px; }
   .sys-head h2 { margin: 0 4px 0 0; }
-  .nums { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .nums { display: flex; gap: 3px; margin-top: 4px; }
   .nums button {
-    min-width: 32px;
-    min-height: 30px;
+    flex: 1 1 0;
+    max-width: 34px;
+    min-width: 0;
+    min-height: 28px;
     padding: 0;
     border-width: 6px;
     border-image-width: 6px;
@@ -1092,7 +1107,7 @@ button > .ico:first-child { margin-right: 6px; }
   .cand .star { font-size: 0.85em; }
   .cand .star:nth-of-type(3) { display: none; }
   .cands { gap: 3px; }
-  .modules { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
+  .modules { gap: 5px; }
   .module { font-size: 0.95em; gap: 1px 6px; align-content: start; }
   .module .fx { font-size: 0.82em; line-height: 1.2; }
   .recipe { padding: 0 2px; border-width: 6px; border-image-width: 6px; }
@@ -1127,7 +1142,7 @@ button > .ico:first-child { margin-right: 6px; }
     position: fixed;
     z-index: 20;
     inset: var(--pad-t) var(--pad-r) var(--pad-b) auto;
-    width: var(--side);
+    width: max(var(--rcol), 270px);
     padding: 0;
     background: none;
     align-items: stretch;
@@ -1149,21 +1164,6 @@ button > .ico:first-child { margin-right: 6px; }
   .end > .eyebrow { justify-self: center; }
   .end > .stats { grid-column: 2; grid-row: 1 / span 5; align-self: center; margin: 0; }
   .end > .choices { grid-column: 1 / -1; }
-}
-
-/* Écran plus proche du 16:9 (iPhone SE, vieux Android) : la scène est limitée par la largeur,
-   la barre d'état passe au-dessus d'elle et les actions en dessous ; le panneau prend toute
-   la hauteur à droite. */
-@media (orientation: landscape) and (max-height: 540px) and (max-aspect-ratio: 2 / 1) {
-  :root { --side: clamp(200px, 30vw, 270px); }
-  body {
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    grid-template-areas: 'top tabs' 'stage panel' 'dock panel';
-  }
-  .stage-wrap { place-items: center; }
-  .topbar { grid-area: top; width: 100%; margin: 0; }
-  .dock { display: flex; flex-wrap: wrap; justify-content: center; }
-  .dock button { flex: 0 1 auto; padding: 0 6px; }
 }
 
 @media (orientation: landscape) and (max-height: 330px) {

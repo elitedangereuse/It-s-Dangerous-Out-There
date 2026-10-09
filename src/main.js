@@ -338,7 +338,7 @@ function systemPanel() {
   if (phoneUI.matches) {
     const nums = sys.bodies.map((b) => `<button class="num ${b.id === view.selectedBodyId ? 'sel' : ''} ${b.revealed === 0 ? 'unknown' : ''}" data-body="${b.id}">${b.index}</button>`).join('');
     return `
-    <div class="sys-head"><h2>${esc(sys.name)}</h2>${chips.join('')}</div>
+    ${sel ? '' : `<div class="sys-head"><h2>${esc(sys.name)}</h2>${chips.join('')}</div>`}
     ${scanning ? '<p class="scanning">Scan en cours…</p>' : ''}
     ${sel ? bodyDetail(sel) : `<p class="muted hint">${unknown ? 'Système inconnu : lancez un scan, ou touchez un signal.' : 'Touchez un corps pour l\'examiner.'}</p>`}
     <div class="nums">${nums}</div>`;
@@ -653,8 +653,8 @@ function modulesPanel() {
     <p class="seed">Graine de la galaxie : ${state.seed}</p>`;
 }
 
-function logPanel() {
-  return `<h2>Journal de bord</h2><ol class="log">${state.log
+function logPanel(title = 'Journal de bord') {
+  return `<h2>${title}</h2><ol class="log">${state.log
     .slice()
     .reverse()
     .map((l) => `<li class="${l.kind}"><span class="j">S${l.jump}</span>${esc(l.text)}</li>`)
@@ -685,6 +685,29 @@ function bodyActions(b) {
     acts.push({ act: 'land', icon: icon('land'), label: 'Atterrir', cost: `${G.COSTS.land}${icon('bolt')}`, disabled: !check.ok, why: check.reason || '', primary: true, key: 'L' });
   }
   return acts;
+}
+
+// Téléphone en paysage : les actions sont réparties sous les deux pouces. À gauche, les actions
+// d'appoint (synthèse, écopage, retour…) ; à droite, celles qui font avancer le voyage. Dans
+// chaque colonne, l'action principale est en bas, au plus près du pouce.
+const LEFT_ACTS = ['back', 'synth', 'scoop', 'boost', 'retry', 'menu'];
+const LEFT_SURF = ['analyze', 'harvest'];
+
+function renderDocks() {
+  const acts = dockActions();
+  const left = $('#dock-left');
+  const journal = $('#journal');
+  left.hidden = journal.hidden = !phoneUI.matches;
+  if (!phoneUI.matches) {
+    $('#dock').innerHTML = acts.map(actionButton).join('');
+    return;
+  }
+  const isLeft = (a) => LEFT_ACTS.includes(a.act) || LEFT_SURF.includes(a.data?.surf);
+  const column = (list) => [...list.filter((a) => !a.primary), ...list.filter((a) => a.primary)].map(actionButton).join('');
+  const shown = acts.filter((a) => !a.sep);
+  left.innerHTML = column(shown.filter(isLeft));
+  $('#dock').innerHTML = column(shown.filter((a) => !isLeft(a)));
+  journal.innerHTML = logPanel('Journal');
 }
 
 // Libellés courts des actions de surface pour la barre d'actions du téléphone.
@@ -955,6 +978,7 @@ function update() {
   placeTip();
 
   // Panneau latéral
+  if (phoneUI.matches && view.tab === 'log') view.tab = 'ctx';
   $('#tab-ctx').innerHTML = `${ctxTabLabel()}`;
   for (const b of document.querySelectorAll('.tabs [data-tab]')) b.setAttribute('aria-selected', String(b.dataset.tab === view.tab));
   const panel = $('#panel');
@@ -985,7 +1009,7 @@ function update() {
     panel.classList.add('enter');
   }
 
-  $('#dock').innerHTML = dockActions().filter((a) => !(phoneUI.matches && a.sep)).map(actionButton).join('');
+  renderDocks();
   if (showNav) drawNavmap();
 }
 
@@ -1177,9 +1201,9 @@ document.addEventListener('keydown', (e) => {
     if (view.selectedBodyId) return selectBody(null);
     return;
   }
-  if (k === 'y') return press('#dock [data-act="synth"]');
+  if (k === 'y') return press('.dock [data-act="synth"]');
   if (view.mode === 'nav') {
-    if (k === 'Enter') return press('#dock [data-act="jump"]');
+    if (k === 'Enter') return press('.dock [data-act="jump"]');
     if (k === 'ArrowDown' || k === 'ArrowUp' || k === 'ArrowRight' || k === 'ArrowLeft') {
       e.preventDefault();
       const cands = navCands();
@@ -1194,8 +1218,8 @@ document.addEventListener('keydown', (e) => {
   }
   if (view.mode === 'synth') return;
   if (state.phase === 'surface') {
-    if (/^[1-9]$/.test(k)) return press(`#dock [data-key="${k}"]`);
-    if (k === 'd') return press('#dock [data-surf="takeoff"]');
+    if (/^[1-9]$/.test(k)) return press(`.dock [data-key="${k}"]`);
+    if (k === 'd') return press('.dock [data-surf="takeoff"]');
     return;
   }
   const map = { a: 'auto', e: 'scoop', b: 'boost', n: 'nav', m: 'manual', l: 'land' };
