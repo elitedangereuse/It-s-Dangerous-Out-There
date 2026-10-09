@@ -983,8 +983,12 @@ button > .ico:first-child { margin-right: 6px; }
   }
   html, body { font-size: 13px; height: 100%; overflow: hidden; overscroll-behavior: none; }
   body {
+    /* Hauteur mesurée en JS (--app-h) : certains navigateurs Android (Samsung) annoncent un
+       100dvh plus haut que la zone réellement visible, ce qui poussait les boutons hors écran. */
+    position: fixed;
+    inset: 0;
     min-height: 0;
-    height: 100dvh;
+    height: var(--app-h, 100dvh);
     display: grid;
     grid-template-columns: var(--lcol) minmax(0, 1fr) var(--rcol);
     grid-template-rows: auto auto minmax(0, 1fr) auto;
