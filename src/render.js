@@ -30,7 +30,7 @@ const SHIP_H = S.SHIP_H ?? 16;
 const GEAR_H = S.SHIP_GEAR_H ?? 4;
 const SMALL_W = S.SHIP_SMALL_W ?? 26;
 const SMALL_H = S.SHIP_SMALL_H ?? 8;
-const HATCH = S.SHIP_HATCH ?? { x: Math.round(SHIP_W * 0.55), y: SHIP_H - 1 };
+const HATCH0 = S.SHIP_HATCH ?? { x: Math.round(SHIP_W * 0.55), y: SHIP_H - 1 };
 const ASTRO_W = S.ASTRO_W ?? 6;
 const ASTRO_H = S.ASTRO_H ?? 9;
 
@@ -286,6 +286,8 @@ export function createRenderer(canvas) {
   let currentStar = 'G';
   let currentBodies = [];
   let currentSystem = null;
+  let currentModel = 'mandalay';
+  let currentNpc = 0;
 
   // ---------- Pixel Planets ----------
   // Chaque sprite est rafraîchi à cadence réduite dans un petit canvas 2D.
@@ -497,9 +499,15 @@ export function createRenderer(canvas) {
 
   // ---------- Vaisseau et commandant ----------
 
-  function drawShip(x, y, t, { thrust = 0, gear = 0, flip = false, small = false } = {}) {
+  // model : modèle à dessiner (par défaut celui du joueur) ; npc : un autre vaisseau que le sien.
+  function drawShip(x, y, t, { thrust = 0, gear = 0, flip = false, small = false, model = null, npc = false } = {}) {
     if (S.drawShip) {
-      S.drawShip(ctx, Math.round(x), Math.round(y), { t, thrust, gear, flip, small });
+      let m = model || currentModel;
+      if (npc && !model) {
+        const others = (S.SHIP_MODEL_IDS || []).filter((id) => id !== currentModel);
+        m = others.length ? others[(currentNpc >>> 0) % others.length] : currentModel;
+      }
+      S.drawShip(ctx, Math.round(x), Math.round(y), { t, thrust, gear, flip, small, model: m });
       return;
     }
     // Ancien sprite (si sprites.js n'expose pas encore drawShip).
@@ -889,7 +897,7 @@ export function createRenderer(canvas) {
       ctx.save();
       ctx.translate(x + SMALL_W / 2, y - 3);
       ctx.rotate(0.25);
-      drawShip(-SMALL_W / 2, -SMALL_H / 2, t, { flip: true, small: true });
+      drawShip(-SMALL_W / 2, -SMALL_H / 2, t, { flip: true, small: true, npc: true });
       ctx.restore();
       ctx.fillStyle = '#1a1a22';
       ctx.fillRect(x - 10, y - 1, 46, 2);
@@ -938,7 +946,8 @@ export function createRenderer(canvas) {
 
   // Rampe de la soute vers le sol, du côté droit.
   function drawRamp(landedY, groundY, open = 1) {
-    const hx = SHIP_LAND_X + HATCH.x, hy = landedY + HATCH.y;
+    const hatch = S.shipHatch ? S.shipHatch(currentModel) : HATCH0;
+    const hx = SHIP_LAND_X + hatch.x, hy = landedY + hatch.y;
     const len = Math.max(6, groundY - hy + 4);
     const ang = (Math.PI / 2) * (1 - open) + 0.55 * open;
     const ex = hx + Math.cos(ang) * len * 0.9, ey = Math.min(groundY, hy + Math.sin(ang) * len);
@@ -1094,6 +1103,8 @@ export function createRenderer(canvas) {
       currentStar = view.state?.system?.star || 'G';
       currentBodies = view.state?.system?.bodies || [];
       currentSystem = view.state?.system || null;
+      currentModel = view.state?.ship?.model || 'mandalay';
+      currentNpc = (view.state?.jumps || 0) + (view.state?.system?.bodies?.length || 0);
       switch (view.scene) {
         case 'jump': jumpScene(view, t); break;
         case 'landing': landingScene(view, t); break;
