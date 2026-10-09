@@ -23,6 +23,10 @@
   --good: #7df0b4;
   --bad: #ff6b81;
   --event: #ffd36e;
+  /* Ressources du vaisseau : même couleur partout que leur jauge */
+  --fuel: #ffbf5e;
+  --hull: #b49cff;
+  --energy: #6fd9ff;
   --font: 'DotGothic16', 'Pixelify Sans', 'VT323', ui-monospace, monospace;
   --mono: 'VT323', ui-monospace, monospace;
   --topbar: 76px;
@@ -119,6 +123,21 @@ kbd {
   vertical-align: 1px;
   display: inline-block;
 }
+
+/* Carburant, coque, énergie : icône et valeur dans la couleur de leur jauge, partout. */
+.ico.fuel { color: var(--fuel); }
+.ico.hull { color: var(--hull); }
+.ico.bolt { color: var(--energy); }
+.res { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; font-weight: 600; }
+.res .ico { width: 12px; height: 12px; vertical-align: 0; }
+.res.fuel { color: var(--fuel); }
+.res.hull { color: var(--hull); }
+.res.energy { color: var(--energy); }
+/* Sur fond orange (bouton principal) ou dans un bouton désactivé : versions lisibles. */
+button.primary .res.fuel, button.primary .ico.fuel { color: #8a4300; }
+button.primary .res.hull, button.primary .ico.hull { color: #4b2fa8; }
+button.primary .res.energy, button.primary .ico.bolt { color: #0b6a96; }
+button:disabled .res, button.primary:disabled .res { opacity: 0.7; }
 
 /* ---------- Boutons ---------- */
 
@@ -268,10 +287,10 @@ button > .ico:first-child { margin-right: 6px; }
   column-gap: 8px;
   align-items: center;
 }
-.gauge.fuel { --c: #ffbf5e; --c-hi: #ffe2a6; --c-lo: #e08a32; }
-.gauge.hull { --c: #b49cff; --c-hi: #dcd0ff; --c-lo: #7e66e0; }
-.gauge.energy { --c: #6fd9ff; --c-hi: #c4f1ff; --c-lo: #2fa8e0; }
-.gauge > .ico { grid-row: 1 / 3; color: var(--c); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--c) 60%, transparent)); }
+.gauge.fuel { --c: var(--fuel); --c-hi: #ffe2a6; --c-lo: #e08a32; }
+.gauge.hull { --c: var(--hull); --c-hi: #dcd0ff; --c-lo: #7e66e0; }
+.gauge.energy { --c: var(--energy); --c-hi: #c4f1ff; --c-lo: #2fa8e0; }
+.gauge > .ico[class] { grid-row: 1 / 3; color: var(--c); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--c) 60%, transparent)); }
 .gauge .lbl { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 0.78em; white-space: nowrap; line-height: 1.1; }
 .gauge .lbl span:first-child { color: var(--muted); }
 .gauge .lbl span:last-child { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -717,16 +736,16 @@ button > .ico:first-child { margin-right: 6px; }
 .cand .name .ico { color: var(--good); }
 .cand .star { color: var(--muted); font-size: 0.82em; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .cand .star .ico { width: 12px; height: 12px; }
-.cand .star .ico.fuel { color: var(--event); }
-.cand .star .ico.bolt { color: var(--cyan); }
+.cand .star .ico.fuel { color: var(--fuel); }
+.cand .star .ico.bolt { color: var(--energy); }
 .cand .gain { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
 .cand .star:last-child { justify-content: flex-end; }
 .cand.dest .name { color: var(--good); font-weight: 600; }
 .cand.out { opacity: 0.55; }
 .legend { color: var(--muted); font-size: 0.82em; margin-top: 10px; line-height: 1.5; }
 .legend .ico { width: 12px; height: 12px; vertical-align: -1px; }
-.legend .ico.fuel { color: var(--event); }
-.legend .ico.bolt { color: var(--cyan); }
+.legend .ico.fuel { color: var(--fuel); }
+.legend .ico.bolt { color: var(--energy); }
 
 /* Synthèse */
 .recipes { display: grid; gap: 4px; }
@@ -946,97 +965,175 @@ button > .ico:first-child { margin-right: 6px; }
 }
 
 /* ---------- Téléphone en paysage ----------
-   Tout tient dans l'écran, sans défilement de page : barre d'état et scène à gauche,
-   actions puis panneau à droite (seul le panneau défile). La scène reste toujours visible,
-   donc choisir un corps ou une destination montre aussitôt le résultat. */
+   Tout tient dans l'écran, sans défilement de page, pensé pour la hauteur réelle d'un téléphone
+   Android avec la barre d'adresse de Chrome (300 à 360 px). Trois colonnes :
+   - au centre, la barre d'état puis la scène, la plus grande possible ;
+   - à gauche, le journal, avec les actions d'appoint en bas sous le pouce gauche ;
+   - à droite, le panneau (Système / Modules), avec les actions du voyage sous le pouce droit. */
 
 @media (orientation: landscape) and (max-height: 540px) {
   :root {
-    --topbar: 40px;
-    --side: clamp(210px, 31vw, 300px);
-    --pad-t: max(6px, env(safe-area-inset-top));
-    --pad-b: max(6px, env(safe-area-inset-bottom));
-    --pad-l: max(8px, env(safe-area-inset-left));
-    --pad-r: max(8px, env(safe-area-inset-right));
+    --lcol: clamp(110px, 17vw, 200px);
+    --rcol: clamp(150px, 23vw, 240px);
+    --side: var(--rcol);
+    --pad-t: max(4px, env(safe-area-inset-top));
+    --pad-b: max(4px, env(safe-area-inset-bottom));
+    --pad-l: max(6px, env(safe-area-inset-left));
+    --pad-r: max(6px, env(safe-area-inset-right));
   }
-  html, body { font-size: 14px; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  html, body { font-size: 13px; height: 100%; overflow: hidden; overscroll-behavior: none; }
   body {
     min-height: 0;
     height: 100dvh;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) var(--side);
-    grid-template-rows: auto auto auto minmax(0, 1fr);
-    grid-template-areas: 'top dock' 'stage dock' 'stage tabs' 'stage panel';
-    gap: 6px 10px;
+    grid-template-columns: var(--lcol) minmax(0, 1fr) var(--rcol);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'journal top   tabs'
+      'journal stage panel'
+      'journal stage panel'
+      'ldock   stage dock';
+    gap: 5px 6px;
     padding: var(--pad-t) var(--pad-r) var(--pad-b) var(--pad-l);
   }
   .layout, .stage-col, .side { display: contents; }
   .stage-wrap { grid-area: stage; display: grid; place-items: center; min-width: 0; min-height: 0; container-type: size; }
 
-  /* Barre d'état compacte : progression et jauges sur une ligne */
+  /* Barre d'état au-dessus de la scène */
   .topbar {
     grid-area: top;
-    height: var(--topbar);
+    height: auto;
     margin: 0;
-    padding: 0 4px;
-    gap: 10px;
-    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 3px 6px;
+    border: 0;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    background: rgba(8, 9, 32, 0.7);
+    clip-path: var(--step2);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
   .logo { display: none; }
-  .route { gap: 6px; font-size: 0.9em; }
-  .route .end.muted { display: none; }
-  .route .track-wrap { flex: 1 1 40px; min-width: 30px; margin: 0 4px; }
-  .route .stats { padding: 1px 6px; }
-  .gauges { gap: 10px; }
-  .gauge { width: 84px; grid-template-columns: auto auto minmax(20px, 1fr); column-gap: 5px; }
-  .gauge > .ico { grid-row: auto; }
-  .gauge .lbl { font-size: 0.9em; }
+  .route { gap: 6px; font-size: 0.92em; }
+  .route .end.muted, .route .track-wrap { display: none; }
+  .route .end.goal { font-size: 0.95em; }
+  .route .stats { padding: 0 4px; background: none; }
+  .gauges { gap: 8px; }
+  .gauge { width: 66px; grid-template-columns: auto auto minmax(12px, 1fr); column-gap: 4px; }
+  .gauge > .ico[class] { grid-row: auto; }
+  .gauge .lbl { font-size: 0.95em; }
   .gauge .lbl span:first-child, .gauge .delta { display: none; }
-  .gauge .track { margin-top: 0; }
+  .gauge .track { margin-top: 0; height: 8px; }
+  .fs {
+    width: 28px;
+    height: 24px;
+    padding: 0;
+    border-width: 6px;
+    border-image-width: 6px;
+    display: grid;
+    place-items: center;
+    color: var(--accent-hi);
+  }
+  .fs .ico { margin: 0 !important; width: 12px; height: 12px; }
 
-  /* Scène : la plus grande possible dans la hauteur restante */
+  /* Scène au centre */
   .stage {
     margin: 0;
     width: min(calc(100cqw - 12px), calc((100cqh - 12px) * 16 / 9));
     box-shadow: 0 0 0 6px rgba(4, 5, 24, 0.2), 0 0 40px rgba(110, 100, 255, 0.2);
   }
   .stage::after { inset: -6px; border-width: 8px; border-image: var(--f-stage) 6 / 8px stretch; }
-  .tip { font-size: 0.8em; }
-  .toasts { left: 6px; bottom: 6px; gap: 4px; max-width: 75%; }
-  .toasts li { font-size: 0.8em; padding: 2px 8px 3px; }
+  .tip { font-size: 0.85em; }
+  .toasts { left: 6px; bottom: 6px; gap: 3px; max-width: 80%; }
+  .toasts li { font-size: 0.82em; padding: 2px 8px 3px; }
   .toasts li:nth-last-child(n + 3) { display: none; }
 
-  /* Colonne de droite : actions, onglets, panneau */
+  /* Actions : une colonne de chaque côté, en bas, l'action principale au plus près du pouce */
+  .dock { grid-area: dock; }
+  .dock-left { grid-area: ldock; }
   .dock {
-    grid-area: dock;
     min-height: 0;
-    align-self: start;
-    justify-content: stretch;
-    align-content: start;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: stretch;
+    flex-wrap: nowrap;
     gap: 4px;
   }
+  .dock:empty { display: none; }
   .dock button {
-    flex: 1 1 auto;
     display: inline-flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     justify-content: center;
     text-align: center;
-    min-height: 38px;
-    padding: 0 4px;
-    font-size: 0.9em;
-    line-height: 1.2;
+    min-height: 36px;
+    padding: 0 2px;
+    border-width: 6px;
+    border-image-width: 6px;
+    font-size: 0.95em;
+    line-height: 1.15;
+    white-space: nowrap;
   }
-  .dock button .why { flex-basis: 100%; }
-  .dock button > .ico:first-child { margin-right: 4px; }
-  .dock button .cost { margin-left: 6px; }
+  .dock button:has(.why) { flex-wrap: wrap; }
+  .dock button .why { flex-basis: 100%; white-space: normal; }
+  .dock button > .ico:first-child { margin-right: 4px; width: 14px; height: 14px; }
+  .dock button .cost { margin-left: 4px; padding: 0 3px; }
   .dock .sep { display: none; }
-  .dock .hint { padding: 4px 8px; font-size: 0.9em; }
+  .dock .hint { padding: 6px; font-size: 0.95em; justify-content: center; white-space: normal; text-align: center; }
+
+  /* Colonne de gauche : journal */
+  .journal { grid-area: journal; min-height: 0; }
+  .journal h2 { font-size: 0.95em; letter-spacing: 1px; text-transform: uppercase; color: var(--violet); text-shadow: none; }
+  .journal .log li { font-size: 0.9em; }
+
+  /* Colonne de droite : onglets Système / Modules et panneau */
   .tabs { grid-area: tabs; }
-  .tabs button { padding: 4px 2px 5px; font-size: 0.9em; }
-  .panel { grid-area: panel; padding: 4px 6px 8px; max-height: none; }
-  .panel h2 { font-size: 1.15em; }
-  .panel h3 { margin: 12px 0 6px; }
+  .tabs [data-tab='log'] { display: none; }
+  .tabs button { padding: 3px 2px 4px; font-size: 0.95em; }
+  .tabs button[aria-selected='true'] { border-width: 6px; border-image-width: 6px; }
+  .panel { grid-area: panel; padding: 2px 4px 6px; border-width: 6px; border-image-width: 6px; max-height: none; }
+  .journal.panel { grid-area: journal; }
+
+  /* Panneau condensé */
+  .panel h2 { font-size: 1.1em; margin-bottom: 4px; }
+  .panel h3 { margin: 8px 0 4px; }
+  .panel p { margin-bottom: 6px; }
+  .panel .sub { margin-bottom: 6px; }
+  .chips { gap: 4px; margin: 2px 0 6px; }
+  .chip { font-size: 0.85em; padding: 1px 6px 2px; }
+  .detail { margin: 2px 0 4px; padding: 2px 4px 4px; border-width: 6px; border-image-width: 6px; }
+  .detail p { margin-bottom: 4px; }
+  .detail .chips { margin-bottom: 0; }
+  .panel .hint { margin: 2px 0 6px; }
+  .sys-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 4px; }
+  .sys-head h2 { margin: 0 4px 0 0; }
+  .nums { display: flex; gap: 3px; margin-top: 4px; }
+  .nums button {
+    flex: 1 1 0;
+    max-width: 34px;
+    min-width: 0;
+    min-height: 28px;
+    padding: 0;
+    border-width: 6px;
+    border-image-width: 6px;
+    text-align: center;
+    font-weight: 600;
+  }
+  .nums button.sel { border-image-source: var(--f-primary); color: #2b1405; }
+  .nums button.unknown { color: var(--muted); font-style: italic; }
+  .cand { padding: 0 2px; border-width: 6px; border-image-width: 6px; gap: 0 6px; }
+  .cand .star { font-size: 0.85em; }
+  .cand .star:nth-of-type(3) { display: none; }
+  .cands { gap: 3px; }
+  .modules { gap: 5px; }
+  .module { font-size: 0.95em; gap: 1px 6px; align-content: start; }
+  .module .fx { font-size: 0.82em; line-height: 1.2; }
+  .recipe { padding: 0 2px; border-width: 6px; border-image-width: 6px; }
+  .recipes { gap: 3px; }
+  .mats { gap: 4px; }
+  .mats div { padding: 2px 6px; }
+  .log li { padding: 3px 0 4px 16px; }
 
   /* Fenêtres (titre, événements, fin) : plein écran, en deux colonnes */
   .overlay:has(.card) { position: fixed; z-index: 20; padding: var(--pad-t) var(--pad-r) var(--pad-b) var(--pad-l); }
@@ -1064,7 +1161,7 @@ button > .ico:first-child { margin-right: 6px; }
     position: fixed;
     z-index: 20;
     inset: var(--pad-t) var(--pad-r) var(--pad-b) auto;
-    width: var(--side);
+    width: max(var(--rcol), 270px);
     padding: 0;
     background: none;
     align-items: stretch;
@@ -1088,27 +1185,10 @@ button > .ico:first-child { margin-right: 6px; }
   .end > .choices { grid-column: 1 / -1; }
 }
 
-/* Écran plus proche du 16:9 (iPhone SE, vieux Android) : la scène est limitée par la largeur,
-   la barre d'actions passe donc sous la scène et le panneau prend toute la hauteur à droite. */
-@media (orientation: landscape) and (max-height: 540px) and (max-aspect-ratio: 2 / 1) {
-  :root { --side: clamp(190px, 29vw, 270px); }
-  body {
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    grid-template-areas: 'top tabs' 'stage panel' 'dock panel';
-  }
-  .dock { align-self: end; justify-content: center; }
-  .dock button { flex: 0 1 auto; padding: 0 6px; }
-}
-
-@media (orientation: landscape) and (max-height: 380px) {
-  html, body { font-size: 13px; }
-  :root { --topbar: 36px; }
-  .route .track-wrap, .route .end.goal { display: none; }
-  .gauges { gap: 8px; }
-  .gauge { width: 70px; }
-  .dock { gap: 3px; }
-  .dock button { min-height: 34px; padding: 0 3px; font-size: 0.85em; }
-  .dock button .cost { margin-left: 4px; padding: 0 3px; }
+@media (orientation: landscape) and (max-height: 330px) {
+  html, body { font-size: 12px; }
+  .gauge { width: 66px; }
+  .dock button { min-height: 30px; }
 }
 
 /* ---------- Téléphone ou tablette en portrait : on demande de tourner l'appareil ---------- */

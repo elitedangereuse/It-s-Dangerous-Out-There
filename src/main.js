@@ -133,6 +133,7 @@ const phoneLandscape = matchMedia('(orientation: landscape) and (max-height: 540
 // dans la barre d'actions, toujours visible, au lieu du bas du panneau.
 const phoneUI = matchMedia('(orientation: landscape) and (max-height: 540px)');
 phoneUI.addEventListener('change', () => view && update());
+document.addEventListener('fullscreenchange', () => view && update());
 
 function placeTip() {
   const tip = $('#tip');
@@ -148,6 +149,11 @@ function placeTip() {
   tip.style.left = `${(l.x / W) * 100}%`;
   tip.style.top = `${((l.y - Math.max(l.r, 4) - 2) / H) * 100}%`;
   tip.hidden = false;
+  // Garde la bulle entière dans la scène (corps proches du bord, petit écran).
+  const sw = tip.parentElement.clientWidth;
+  const half = tip.offsetWidth / 2;
+  const x = Math.min(Math.max((l.x / W) * sw, half + 4), sw - half - 4);
+  tip.style.left = `${x}px`;
 }
 
 function selectBody(id) {
@@ -173,6 +179,7 @@ const kbd = (k) => (k ? `<kbd>${k}</kbd>` : '');
 // ---------- Icônes en pixels (8×8, couleur courante) ----------
 
 const ICON_BITMAPS = {
+  full: ['###..###', '#......#', '#......#', '........', '........', '#......#', '#......#', '###..###'],
   fuel: ['...##...', '...##...', '..####..', '.######.', '.####.#.', '.####.#.', '..####..', '........'],
   bolt: ['....###.', '...###..', '..###...', '.######.', '...###..', '..###...', '..##....', '.#......'],
   hull: ['.######.', '########', '###..###', '###..###', '.######.', '..####..', '...##...', '........'],
@@ -214,6 +221,18 @@ const icon = (name) => `<svg class="ico ${name}" viewBox="0 0 8 8" aria-hidden="
 
 const GAUGE_ICONS = { fuel: 'fuel', hull: 'hull', energy: 'bolt' };
 
+// Carburant, coque et énergie : partout la même icône et la même couleur que leur jauge
+// (classes .res.fuel / .res.hull / .res.energy dans style.css), pour qu'on les repère d'un coup d'œil.
+const res = (kind, text) => `<span class="res ${kind}">${icon(GAUGE_ICONS[kind])}${text}</span>`;
+const fuelT = (n) => res('fuel', `${n} t`);
+const energyN = (n) => res('energy', `${n}`);
+const hullN = (n) => res('hull', `${n}`);
+// Dans un texte de jeu (journal, bilans, recettes…), ajoute l'icône et la couleur aux mots
+// coque, énergie et carburant. Le texte doit déjà être échappé.
+const RES_WORDS = /(^|[^\p{L}])(coque|énergie|carburant)(?![\p{L}])/giu;
+const RES_KIND = { coque: 'hull', 'énergie': 'energy', carburant: 'fuel' };
+const decorate = (html) => html.replace(RES_WORDS, (m, pre, w) => `${pre}${res(RES_KIND[w.toLowerCase()], w)}`);
+
 // Matériau en ligne : icône et symbole dans sa couleur (n = quantité, facultative).
 const mat = (k, n, cls = '') => `<span class="mat ${cls}" style="--mat:${MATERIALS[k].color}" title="${MATERIALS[k].name}">${n != null ? `${n} ` : ''}${icon(k)}${MATERIALS[k].short}</span>`;
 const matNames = (list) => list.map((k) => `<span class="mat" style="--mat:${MATERIALS[k].color}">${icon(k)}${MATERIALS[k].name}</span>`).join(' ');
@@ -244,6 +263,9 @@ function renderTop() {
   const s = state.ship;
   $('#gauges').innerHTML =
     gauge('fuel', 'Carburant', s.fuel, s.fuelMax, ' t') + gauge('hull', 'Coque', s.hull, s.hullMax) + gauge('energy', 'Énergie', s.energy, s.energyMax);
+  const fs = $('#fs');
+  fs.hidden = !(phoneUI.matches && canFullscreen() && !document.fullscreenElement);
+  if (!fs.innerHTML) fs.innerHTML = icon('full');
 }
 
 function pushToasts() {
@@ -253,7 +275,7 @@ function pushToasts() {
     l.toasted = true;
     const li = document.createElement('li');
     li.className = l.kind;
-    li.textContent = l.text;
+    li.innerHTML = `<span>${decorate(esc(l.text))}</span>`;
     list.appendChild(li);
     setTimeout(() => li.remove(), 6200);
   }
@@ -289,9 +311,9 @@ function bodyDetail(b) {
   const def = BODY_TYPES[b.type];
   const chips = [];
   let text;
-  if (b.revealed === 0) text = '<p>Signal non identifié. Un scan est nécessaire pour savoir ce que c\'est.</p>';
+  if (b.revealed === 0) text = phoneUI.matches ? `<p><span class="title">Signal ${b.index}</span><br><span class="muted">Non identifié : scannez-le.</span></p>` : '<p>Signal non identifié. Un scan est nécessaire pour savoir ce que c\'est.</p>';
   else {
-    text = `<p><span class="title">${esc(b.name)}</span><br><span class="muted">${def.name} · ${b.ls} secondes-lumière</span></p>`;
+    text = `<p><span class="title">${esc(b.name)}</span><br><span class="muted">${def.name} · ${b.ls} ${phoneUI.matches ? 'sl' : 'secondes-lumière'}</span></p>`;
     chips.push(b.landable ? '<span class="chip good">Atterrissable</span>' : '<span class="chip">Pas de surface accessible</span>');
     if (b.revealed >= 2) {
       if (b.terraformable) chips.push('<span class="chip event">Terraformable</span>');
@@ -304,7 +326,7 @@ function bodyDetail(b) {
       text += `<p class="muted mat-line">Matériaux : ${mats}</p>`;
     } else {
       if (b.hint) chips.push('<span class="chip event">Signal détecté</span>');
-      text += '<p class="muted">Un scan détaillé révèle matériaux, signaux et anomalies.</p>';
+      if (!phoneUI.matches) text += '<p class="muted">Un scan détaillé révèle matériaux, signaux et anomalies.</p>';
     }
     if (b.landed) chips.push('<span class="chip cyan">Visité</span>');
   }
@@ -323,6 +345,16 @@ function systemPanel() {
   for (const r of sys.regions || []) chips.push(`<span class="chip bad">${REGION_TYPES[r].name}</span>`);
   const unknown = sys.bodies.every((b) => b.revealed === 0);
   const sel = sys.bodies.find((b) => b.id === view.selectedBodyId);
+  // Téléphone : la scène sert de liste (corps numérotés). Le panneau montre le corps choisi,
+  // et une rangée de numéros pour passer d'un corps à l'autre.
+  if (phoneUI.matches) {
+    const nums = sys.bodies.map((b) => `<button class="num ${b.id === view.selectedBodyId ? 'sel' : ''} ${b.revealed === 0 ? 'unknown' : ''}" data-body="${b.id}">${b.index}</button>`).join('');
+    return `
+    ${sel ? '' : `<div class="sys-head"><h2>${esc(sys.name)}</h2>${chips.join('')}</div>`}
+    ${scanning ? '<p class="scanning">Scan en cours…</p>' : ''}
+    ${sel ? bodyDetail(sel) : `<p class="muted hint">${unknown ? 'Système inconnu : lancez un scan, ou touchez un signal.' : 'Touchez un corps pour l\'examiner.'}</p>`}
+    <div class="nums">${nums}</div>`;
+  }
   return `
     <h2>${esc(sys.name)}</h2>
     <div class="chips">${chips.join('')}</div>
@@ -348,8 +380,8 @@ function surfacePanel() {
   return `
     <h2>${esc(b.name)}</h2>
     <p class="sub">${BODY_TYPES[b.type].name} · ${bodyAtmosphere(b) ? 'atmosphère ténue' : 'sans atmosphère'}</p>
-    <p>${bodyAtmosphere(b) ? 'Le commandant descend la rampe. Le vent siffle contre la visière.' : 'Le commandant descend la rampe. Le silence est total.'}</p>
-    ${sf.analyzed ? `<h3>Relevés</h3><div class="chips">${found.join('') || '<span class="chip">Rien de notable</span>'}</div>` : '<div class="empty">Analysez la surface pour repérer la vie, les évents et les anomalies.</div>'}
+    ${phoneUI.matches ? '' : `<p>${bodyAtmosphere(b) ? 'Le commandant descend la rampe. Le vent siffle contre la visière.' : 'Le commandant descend la rampe. Le silence est total.'}</p>`}
+    ${sf.analyzed ? `<h3>Relevés</h3><div class="chips">${found.join('') || '<span class="chip">Rien de notable</span>'}</div>` : (phoneUI.matches ? '' : '<div class="empty">Analysez la surface pour repérer la vie, les évents et les anomalies.</div>')}
     <h3>Matériaux possibles</h3>
     <p class="muted mat-line">${matNames(b.mats) || '—'}</p>`;
 }
@@ -385,15 +417,15 @@ function navPanel() {
         <span class="name">${c.isDestination ? icon('target') : ''}${esc(c.name)}</span>
         <span class="gain ${gain >= 0 ? 'good' : 'bad'}">${gain >= 0 ? '−' : '+'}${Math.abs(Math.round(gain))} al</span>
         <span class="star">${star.name}${star.scoopable ? icon('fuel') : ''}${star.boost ? icon('bolt') : ''}${regions}</span>
-        <span class="star">${check.ok ? `${d.toFixed(1)} al · ${fuel} t` : `<span class="bad">${check.reason}</span>`}</span>
+        <span class="star">${check.ok ? `${d.toFixed(1)} al · ${fuelT(fuel)}` : `<span class="bad">${check.reason}</span>`}</span>
       </button>`;
     })
     .join('');
   return `
     <h2>Navigation</h2>
-    <p class="sub">Portée ${state.effectiveRange.toFixed(1)} al · ${round1(state.ship.fuel)} t de carburant</p>
+    <p class="sub">Portée ${state.effectiveRange.toFixed(1)} al · ${fuelT(round1(state.ship.fuel))} de carburant</p>
     <div class="cands">${list}</div>
-    <p class="legend">${icon('fuel')} étoile écopable · ${icon('bolt')} jet de suralimentation · en vert : distance gagnée vers la destination. ${touchUI.matches ? '' : 'Double-clic pour sauter directement.'}</p>`;
+    ${phoneUI.matches ? '' : `<p class="legend">${icon('fuel')} étoile écopable · ${icon('bolt')} jet de suralimentation · en vert : distance gagnée vers la destination. ${touchUI.matches ? '' : 'Double-clic pour sauter directement.'}</p>`}`;
 }
 
 function jumpAction(sel) {
@@ -401,7 +433,7 @@ function jumpAction(sel) {
     act: 'jump',
     icon: icon('jump'),
     label: phoneUI.matches ? 'Sauter' : `Sauter vers ${sel.c.name}`,
-    cost: sel.check.ok ? `${sel.fuel} t` : '',
+    cost: sel.check.ok ? fuelT(sel.fuel) : '',
     why: sel.check.ok ? '' : sel.check.reason,
     disabled: !sel.check.ok,
     primary: true,
@@ -570,7 +602,7 @@ function synthPanel() {
           const cost = Object.entries(r.cost).map(([m, n]) => mat(m, n, (have[m] || 0) < n ? 'miss' : '')).join(' ');
           return `<button class="recipe" data-synth="${r.id}" ${G.canSynthesize(state, r) ? '' : 'disabled'}>
             <span>${r.name}${owned ? ` <span class="good">${icon('check')}</span>` : ''}</span><span class="k">${cost}</span>
-            <span class="c">${locked ? 'Plan requis (ruines gardiennes)' : owned ? 'Déjà installé' : r.desc}</span></button>`;
+            <span class="c">${locked ? 'Plan requis (ruines gardiennes)' : owned ? 'Déjà installé' : decorate(r.desc)}</span></button>`;
         })
         .join('')}</div>`)
       .join('')}`;
@@ -594,7 +626,7 @@ function moduleEffect(k, v) {
     case 'scoop':
       return v <= 0 ? ['bad', 'Hors service : écopage impossible'] : ['', `Rendement d'écopage ${Math.round(v)} %`];
     case 'scanner':
-      return v < 25 ? ['bad', 'Scan détaillé impossible sous 25 %'] : ['', `Scan détaillé : ${G.manualScanCost(state)} énergie`];
+      return v < 25 ? ['bad', 'Scan détaillé impossible sous 25 %'] : ['', `Scan détaillé : ${energyN(G.manualScanCost(state))}`];
     case 'thrusters':
       return v < 20 ? ['bad', 'Atterrissage impossible sous 20 %'] : v < 50 ? ['mid', 'Atterrissage brutal probable (40 %)'] : ['', 'Atterrissage en douceur'];
     case 'life':
@@ -609,19 +641,19 @@ function modulesPanel() {
     .map(([k, v]) => {
       const lvl = v < 30 ? 'low' : v < 60 ? 'mid' : '';
       const [cls, fx] = moduleEffect(k, v);
-      return `<div class="module"><span>${MODULES[k].name}</span><span class="v ${lvl}">${Math.round(v)} %</span><span class="mini"><i class="${lvl}" style="width:${pct(v, 100)}%"></i></span><span class="fx ${cls}">${fx}</span></div>`;
+      return `<div class="module"><span>${MODULES[k].name}</span><span class="v ${lvl}">${Math.round(v)} %</span><span class="mini"><i class="${lvl}" style="width:${pct(v, 100)}%"></i></span><span class="fx ${cls}">${decorate(fx)}</span></div>`;
     })
     .join('');
   const ups = RECIPES.filter((r) => r.once && state.upgrades[r.id]);
   const repair = RECIPES.find((r) => r.id === 'module');
   return `
     <h2>${esc(s.name)}</h2>
-    <p class="sub">${esc(SHIPS[s.model].maker)} · ${esc(SHIPS[s.model].desc)}</p>
+    ${phoneUI.matches ? '' : `<p class="sub">${esc(SHIPS[s.model].maker)} · ${esc(SHIPS[s.model].desc)}</p>`}
     <h3>Modules</h3>
     <div class="modules">${mods}</div>
     ${Object.values(s.modules).some((v) => v < 100) ? `<p class="muted mat-line">Réparation en <b>synthèse</b> ${kbd('Y')} : ${Object.entries(repair.cost).map(([m, n]) => mat(m, n, (s.materials[m] || 0) < n ? 'miss' : '')).join(' ')} pour +${state.passenger === 'engineer' ? 60 : 40} % au module le plus abîmé${G.canSynthesize(state, repair) ? '' : ' (matériaux insuffisants)'}.</p>` : ''}
     <h3>Améliorations</h3>
-    ${ups.length ? `<div class="stats-list">${ups.map((r) => `<div class="row"><span>${r.name}</span><span class="tag">${r.desc}</span></div>`).join('')}</div>` : '<p class="muted">Aucune pour l\'instant. Elles se fabriquent en synthèse.</p>'}
+    ${ups.length ? `<div class="stats-list">${ups.map((r) => `<div class="row"><span>${r.name}</span><span class="tag">${decorate(r.desc)}</span></div>`).join('')}</div>` : '<p class="muted">Aucune pour l\'instant. Elles se fabriquent en synthèse.</p>'}
     ${s.boost > 1 || state.passenger || state.flags.tankLeak ? `<h3>En cours</h3><div class="stats-list">
     ${s.boost > 1 ? `<div class="row"><span>FSD suralimenté</span><span class="tag">×${s.boost} au prochain saut</span></div>` : ''}
     ${state.passenger ? `<div class="row"><span>Passager</span><span class="tag">${esc(PASSENGERS[state.passenger].name)}</span></div><p class="muted">${esc(PASSENGERS[state.passenger].perk)}</p>` : ''}
@@ -633,11 +665,11 @@ function modulesPanel() {
     <p class="seed">Graine de la galaxie : ${state.seed}</p>`;
 }
 
-function logPanel() {
-  return `<h2>Journal de bord</h2><ol class="log">${state.log
+function logPanel(title = 'Journal de bord') {
+  return `<h2>${title}</h2><ol class="log">${state.log
     .slice()
     .reverse()
-    .map((l) => `<li class="${l.kind}"><span class="j">S${l.jump}</span>${esc(l.text)}</li>`)
+    .map((l) => `<li class="${l.kind}"><span class="j">S${l.jump}</span>${decorate(esc(l.text))}</li>`)
     .join('')}</ol>`;
 }
 
@@ -647,7 +679,7 @@ function actionButton(a) {
   if (a.sep) return '<span class="sep"></span>';
   if (a.hint) return `<span class="hint">${a.hint}</span>`;
   const attrs = Object.entries(a.data || {}).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ');
-  return `<button class="${a.primary ? 'primary' : ''}" ${a.act ? `data-act="${a.act}"` : ''} ${a.key ? `data-key="${esc(a.key)}"` : ''} ${attrs} ${a.disabled ? 'disabled' : ''} title="${esc(a.why || '')}">${a.icon || ''}${esc(a.label)}${a.cost ? `<span class="cost">${a.cost}</span>` : ''}${kbd(a.key)}${a.why && a.inlineWhy !== false ? `<span class="why">${esc(a.why)}</span>` : ''}</button>`;
+  return `<button class="${a.primary ? 'primary' : ''}" ${a.act ? `data-act="${a.act}"` : ''} ${a.key ? `data-key="${esc(a.key)}"` : ''} ${attrs} ${a.disabled ? 'disabled' : ''} title="${esc(a.why || '')}">${a.icon || ''}${esc(phoneUI.matches && a.short ? a.short : a.label)}${a.cost ? `<span class="cost">${a.cost}</span>` : ''}${kbd(a.key)}${a.why && a.inlineWhy !== false ? `<span class="why">${esc(a.why)}</span>` : ''}</button>`;
 }
 
 function bodyActions(b) {
@@ -658,14 +690,40 @@ function bodyActions(b) {
     let why = '';
     if (state.ship.modules.scanner < 25) why = 'Scanner trop endommagé';
     else if (state.ship.energy < scanCost) why = 'Énergie insuffisante';
-    acts.push({ act: 'manual', icon: icon('scope'), label: 'Scan détaillé', cost: `${scanCost}${icon('bolt')}`, disabled: !!why, why, key: 'M' });
+    acts.push({ act: 'manual', icon: icon('scope'), label: 'Scan détaillé', short: 'Scan corps', cost: energyN(scanCost), disabled: !!why, why, key: 'M' });
   }
   if (b.landable && b.revealed > 0) {
     const check = G.canLand(state, b);
-    acts.push({ act: 'land', icon: icon('land'), label: 'Atterrir', cost: `${G.COSTS.land}${icon('bolt')}`, disabled: !check.ok, why: check.reason || '', primary: true, key: 'L' });
+    acts.push({ act: 'land', icon: icon('land'), label: 'Atterrir', cost: energyN(G.COSTS.land), disabled: !check.ok, why: check.reason || '', primary: true, key: 'L' });
   }
   return acts;
 }
+
+// Téléphone en paysage : les actions sont réparties sous les deux pouces. À gauche, les actions
+// d'appoint (synthèse, écopage, retour…) ; à droite, celles qui font avancer le voyage. Dans
+// chaque colonne, l'action principale est en bas, au plus près du pouce.
+const LEFT_ACTS = ['back', 'synth', 'scoop', 'boost', 'retry', 'menu'];
+const LEFT_SURF = ['analyze', 'harvest'];
+
+function renderDocks() {
+  const acts = dockActions();
+  const left = $('#dock-left');
+  const journal = $('#journal');
+  left.hidden = journal.hidden = !phoneUI.matches;
+  if (!phoneUI.matches) {
+    $('#dock').innerHTML = acts.map(actionButton).join('');
+    return;
+  }
+  const isLeft = (a) => LEFT_ACTS.includes(a.act) || LEFT_SURF.includes(a.data?.surf);
+  const column = (list) => [...list.filter((a) => !a.primary), ...list.filter((a) => a.primary)].map(actionButton).join('');
+  const shown = acts.filter((a) => !a.sep);
+  left.innerHTML = column(shown.filter(isLeft));
+  $('#dock').innerHTML = column(shown.filter((a) => !isLeft(a)));
+  journal.innerHTML = logPanel('Journal');
+}
+
+// Libellés courts des actions de surface pour la barre d'actions du téléphone.
+const SURFACE_SHORT = { analyze: 'Analyser', harvest: 'Ressources', sample: 'Échantillons', feature: 'Explorer', geo: 'Évents', takeoff: 'Décoller' };
 
 function dockActions() {
   if (view.scene === 'title') return [];
@@ -673,11 +731,11 @@ function dockActions() {
   if (view.scene === 'end') {
     return [
       { act: 'new', icon: icon('jump'), label: 'Nouvelle partie', primary: true, key: 'Entrée' },
-      { act: 'retry', label: 'Rejouer cette graine', key: 'R' },
-      { act: 'menu', label: 'Retour au menu principal', key: 'M' },
+      { act: 'retry', label: 'Rejouer cette graine', short: 'Rejouer', key: 'R' },
+      { act: 'menu', label: 'Retour au menu principal', short: 'Menu', key: 'M' },
     ];
   }
-  if (state.phase === 'event' || view.scoopPick) return [{ hint: 'Décision requise : choisissez une option dans la fenêtre.' }];
+  if (state.phase === 'event' || view.scoopPick) return [{ hint: phoneUI.matches ? 'Décision requise' : 'Décision requise : choisissez une option dans la fenêtre.' }];
   const back = { act: 'back', icon: icon('back'), label: 'Retour', key: 'Échap' };
   if (view.mode === 'synth') return [back];
   if (view.mode === 'nav') {
@@ -697,7 +755,8 @@ function dockActions() {
           data: { surf: a.id },
           icon: takeoff ? icon('takeoff') : a.done ? icon('check') : '',
           label: takeoff ? 'Décoller' : a.label,
-          cost: a.cost ? `${a.cost}${icon('bolt')}` : '',
+          short: SURFACE_SHORT[a.id],
+          cost: a.cost ? energyN(a.cost) : '',
           disabled: a.done || low,
           why: low ? 'Énergie insuffisante' : '',
           inlineWhy: false,
@@ -717,9 +776,9 @@ function dockActions() {
     acts.push(...bodyActions(b));
   }
   if (!(phoneUI.matches && sys.autoScanned)) acts.push(
-    { act: 'auto', icon: icon('radar'), label: 'Scan du système', cost: `${G.COSTS.autoScan}${icon('bolt')}`, disabled: sys.autoScanned || state.ship.energy < G.COSTS.autoScan, why: sys.autoScanned ? 'Déjà fait' : '', inlineWhy: false, key: 'A', primary: !sys.autoScanned },
+    { act: 'auto', icon: icon('radar'), label: 'Scan du système', short: 'Scanner', cost: energyN(G.COSTS.autoScan), disabled: sys.autoScanned || state.ship.energy < G.COSTS.autoScan, why: sys.autoScanned ? 'Déjà fait' : '', inlineWhy: false, key: 'A', primary: !sys.autoScanned },
   );
-  if (star.scoopable) acts.push({ act: 'scoop', icon: icon('fuel'), label: sys.scooped ? 'Écopage fait' : 'Écoper', disabled: !G.canScoop(state), key: 'E' });
+  if (star.scoopable) acts.push({ act: 'scoop', icon: icon('fuel'), label: sys.scooped ? 'Écopage fait' : 'Écoper', short: sys.scooped ? 'Écopé' : 'Écoper', disabled: !G.canScoop(state), key: 'E' });
   if (star.boost) acts.push({ act: 'boost', icon: icon('bolt'), label: `Jet ×${star.boost}`, cost: 'dégâts', disabled: !G.canBoost(state), key: 'B' });
   acts.push({ sep: true }, synth, { act: 'nav', icon: icon('compass'), label: 'Navigation', key: 'N', primary: sys.autoScanned });
   return acts;
@@ -729,8 +788,8 @@ function dockActions() {
 
 function costLabel(cost = {}) {
   const parts = [];
-  if (cost.energy) parts.push(`${cost.energy}${icon('bolt')}`);
-  if (cost.fuel) parts.push(`${cost.fuel} t${icon('fuel')}`);
+  if (cost.energy) parts.push(energyN(cost.energy));
+  if (cost.fuel) parts.push(fuelT(cost.fuel));
   if (cost.mats) parts.push(Object.entries(cost.mats).map(([m, n]) => mat(m, n)).join(' '));
   return parts.join(', ');
 }
@@ -751,7 +810,7 @@ function effectsLine(effects = []) {
 function eventCard() {
   const ev = state.event;
   const choices = ev.outcome
-    ? `<div class="outcome"><p>${esc(ev.outcome)}</p>${effectsLine(ev.effects)}</div><div class="choices"><button class="primary" data-act="close">Continuer${kbd('Entrée')}</button></div>`
+    ? `<div class="outcome"><p>${decorate(esc(ev.outcome))}</p>${effectsLine(ev.effects)}</div><div class="choices"><button class="primary" data-act="close">Continuer${kbd('Entrée')}</button></div>`
     : `<div class="choices">${G.eventChoices(state)
         .map(({ choice, index, label, available }, n) => {
           const cost = costLabel(choice.cost);
@@ -769,7 +828,7 @@ function scoopCard() {
       const p = G.scoopPreview(state, id);
       const risk = Math.round(p.risk * 100);
       return `<button data-scoop="${id}" data-n="${i + 1}">${esc(a.name)} <span class="muted">· ${esc(a.desc)}</span>
-        <span class="cost">${p.min}–${p.max} t${icon('fuel')} · <span class="${risk >= 30 ? 'bad' : risk > 0 ? '' : 'good'}">surchauffe ${risk} %</span></span>${kbd(i + 1)}</button>`;
+        <span class="cost">${res('fuel', `${p.min}–${p.max} t`)} · <span class="${risk >= 30 ? 'bad' : risk > 0 ? '' : 'good'}">surchauffe ${risk} %</span></span>${kbd(i + 1)}</button>`;
     })
     .join('');
   return `<div class="card event-card" role="dialog" aria-labelledby="scp"><div class="eyebrow">${icon('fuel')}Écopage</div>
@@ -828,7 +887,7 @@ function shipPicker() {
     .map(([id, d]) => {
       const ok = isUnlocked(profile, id);
       return `<button data-ship="${id}" class="${id === shipChoice ? 'sel' : ''}" ${ok ? '' : 'disabled'} title="${esc(ok ? d.desc : d.unlock)}">
-        ${shipThumbUrl(id) ? `<img class="ship-thumb" src="${shipThumbUrl(id)}" alt="">` : ''}<b>${esc(d.name)}</b><span class="muted">${ok ? `${d.range} al · ${d.fuel} t · coque ${d.hull}` : 'Verrouillé'}</span></button>`;
+        ${shipThumbUrl(id) ? `<img class="ship-thumb" src="${shipThumbUrl(id)}" alt="">` : ''}<b>${esc(d.name)}</b><span class="muted">${ok ? `${d.range} al · ${fuelT(d.fuel)} · ${hullN(d.hull)}` : 'Verrouillé'}</span></button>`;
     })
     .join('')}</div>`;
 }
@@ -849,7 +908,7 @@ function titleCard() {
     <div class="kicker">Roguelite d'exploration spatiale</div>
     <div class="logo-big">It's Dangerous<span>Out There</span></div>
     <p class="motto">« La destination est certaine. Le voyage ne l'est jamais. »</p>
-    <p>Rejoignez <b>${esc(state.galaxy.destination.name)}</b>, à ${Math.round(state.galaxy.destination.dist)} années-lumière, à bord d'un ${esc(state.ship.name)}. Carburant, coque et énergie sont comptés.</p></div>
+    <p>Rejoignez <b>${esc(state.galaxy.destination.name)}</b>, à ${Math.round(state.galaxy.destination.dist)} années-lumière, à bord d'un ${esc(state.ship.name)}. ${res('fuel', 'Carburant')}, ${res('hull', 'coque')} et ${res('energy', 'énergie')} sont comptés.</p></div>
     <div class="tc-play">${shipPicker()}
     <div class="choices"><button class="primary" data-act="start">${icon('takeoff')}Décoller${kbd('Entrée')}</button></div>
     <details><summary>Comment jouer</summary><ul>
@@ -931,6 +990,7 @@ function update() {
   placeTip();
 
   // Panneau latéral
+  if (phoneUI.matches && view.tab === 'log') view.tab = 'ctx';
   $('#tab-ctx').innerHTML = `${ctxTabLabel()}`;
   for (const b of document.querySelectorAll('.tabs [data-tab]')) b.setAttribute('aria-selected', String(b.dataset.tab === view.tab));
   const panel = $('#panel');
@@ -961,7 +1021,7 @@ function update() {
     panel.classList.add('enter');
   }
 
-  $('#dock').innerHTML = dockActions().map(actionButton).join('');
+  renderDocks();
   if (showNav) drawNavmap();
 }
 
@@ -969,8 +1029,10 @@ function update() {
 
 // Sur téléphone et tablette, le départ passe en plein écran et verrouille le paysage
 // quand le navigateur le permet (Android ; iPhone ignore, l'écran « Tournez » prend le relais).
+const canFullscreen = () => matchMedia('(pointer: coarse)').matches && !!document.documentElement.requestFullscreen && document.fullscreenEnabled !== false;
+
 function goFullscreenLandscape() {
-  if (!matchMedia('(pointer: coarse)').matches || document.fullscreenElement) return;
+  if (!canFullscreen() || document.fullscreenElement) return;
   const el = document.documentElement;
   if (!el.requestFullscreen) return;
   el.requestFullscreen({ navigationUI: 'hide' })
@@ -1025,6 +1087,7 @@ function act(name) {
     case 'jump': return doJump(view.navSel);
     case 'nav': view.mode = 'nav'; view.tab = 'ctx'; break;
     case 'synth': view.mode = 'synth'; view.tab = 'ctx'; break;
+    case 'fullscreen': goFullscreenLandscape(); break;
     case 'back': view.mode = 'system'; break;
     case 'close':
       G.closeEvent(state);
@@ -1150,9 +1213,9 @@ document.addEventListener('keydown', (e) => {
     if (view.selectedBodyId) return selectBody(null);
     return;
   }
-  if (k === 'y') return press('#dock [data-act="synth"]');
+  if (k === 'y') return press('.dock [data-act="synth"]');
   if (view.mode === 'nav') {
-    if (k === 'Enter') return press('#dock [data-act="jump"]');
+    if (k === 'Enter') return press('.dock [data-act="jump"]');
     if (k === 'ArrowDown' || k === 'ArrowUp' || k === 'ArrowRight' || k === 'ArrowLeft') {
       e.preventDefault();
       const cands = navCands();
@@ -1167,8 +1230,8 @@ document.addEventListener('keydown', (e) => {
   }
   if (view.mode === 'synth') return;
   if (state.phase === 'surface') {
-    if (/^[1-9]$/.test(k)) return press(`#dock [data-key="${k}"]`);
-    if (k === 'd') return press('#dock [data-surf="takeoff"]');
+    if (/^[1-9]$/.test(k)) return press(`.dock [data-key="${k}"]`);
+    if (k === 'd') return press('.dock [data-surf="takeoff"]');
     return;
   }
   const map = { a: 'auto', e: 'scoop', b: 'boost', n: 'nav', m: 'manual', l: 'land' };
