@@ -221,6 +221,18 @@ const icon = (name) => `<svg class="ico ${name}" viewBox="0 0 8 8" aria-hidden="
 
 const GAUGE_ICONS = { fuel: 'fuel', hull: 'hull', energy: 'bolt' };
 
+// Carburant, coque et énergie : partout la même icône et la même couleur que leur jauge
+// (classes .res.fuel / .res.hull / .res.energy dans style.css), pour qu'on les repère d'un coup d'œil.
+const res = (kind, text) => `<span class="res ${kind}">${icon(GAUGE_ICONS[kind])}${text}</span>`;
+const fuelT = (n) => res('fuel', `${n} t`);
+const energyN = (n) => res('energy', `${n}`);
+const hullN = (n) => res('hull', `${n}`);
+// Dans un texte de jeu (journal, bilans, recettes…), ajoute l'icône et la couleur aux mots
+// coque, énergie et carburant. Le texte doit déjà être échappé.
+const RES_WORDS = /(^|[^\p{L}])(coque|énergie|carburant)(?![\p{L}])/giu;
+const RES_KIND = { coque: 'hull', 'énergie': 'energy', carburant: 'fuel' };
+const decorate = (html) => html.replace(RES_WORDS, (m, pre, w) => `${pre}${res(RES_KIND[w.toLowerCase()], w)}`);
+
 // Matériau en ligne : icône et symbole dans sa couleur (n = quantité, facultative).
 const mat = (k, n, cls = '') => `<span class="mat ${cls}" style="--mat:${MATERIALS[k].color}" title="${MATERIALS[k].name}">${n != null ? `${n} ` : ''}${icon(k)}${MATERIALS[k].short}</span>`;
 const matNames = (list) => list.map((k) => `<span class="mat" style="--mat:${MATERIALS[k].color}">${icon(k)}${MATERIALS[k].name}</span>`).join(' ');
@@ -263,7 +275,7 @@ function pushToasts() {
     l.toasted = true;
     const li = document.createElement('li');
     li.className = l.kind;
-    li.textContent = l.text;
+    li.innerHTML = `<span>${decorate(esc(l.text))}</span>`;
     list.appendChild(li);
     setTimeout(() => li.remove(), 6200);
   }
@@ -405,13 +417,13 @@ function navPanel() {
         <span class="name">${c.isDestination ? icon('target') : ''}${esc(c.name)}</span>
         <span class="gain ${gain >= 0 ? 'good' : 'bad'}">${gain >= 0 ? '−' : '+'}${Math.abs(Math.round(gain))} al</span>
         <span class="star">${star.name}${star.scoopable ? icon('fuel') : ''}${star.boost ? icon('bolt') : ''}${regions}</span>
-        <span class="star">${check.ok ? `${d.toFixed(1)} al · ${fuel} t` : `<span class="bad">${check.reason}</span>`}</span>
+        <span class="star">${check.ok ? `${d.toFixed(1)} al · ${fuelT(fuel)}` : `<span class="bad">${check.reason}</span>`}</span>
       </button>`;
     })
     .join('');
   return `
     <h2>Navigation</h2>
-    <p class="sub">Portée ${state.effectiveRange.toFixed(1)} al · ${round1(state.ship.fuel)} t de carburant</p>
+    <p class="sub">Portée ${state.effectiveRange.toFixed(1)} al · ${fuelT(round1(state.ship.fuel))} de carburant</p>
     <div class="cands">${list}</div>
     ${phoneUI.matches ? '' : `<p class="legend">${icon('fuel')} étoile écopable · ${icon('bolt')} jet de suralimentation · en vert : distance gagnée vers la destination. ${touchUI.matches ? '' : 'Double-clic pour sauter directement.'}</p>`}`;
 }
@@ -421,7 +433,7 @@ function jumpAction(sel) {
     act: 'jump',
     icon: icon('jump'),
     label: phoneUI.matches ? 'Sauter' : `Sauter vers ${sel.c.name}`,
-    cost: sel.check.ok ? `${sel.fuel} t` : '',
+    cost: sel.check.ok ? fuelT(sel.fuel) : '',
     why: sel.check.ok ? '' : sel.check.reason,
     disabled: !sel.check.ok,
     primary: true,
@@ -590,7 +602,7 @@ function synthPanel() {
           const cost = Object.entries(r.cost).map(([m, n]) => mat(m, n, (have[m] || 0) < n ? 'miss' : '')).join(' ');
           return `<button class="recipe" data-synth="${r.id}" ${G.canSynthesize(state, r) ? '' : 'disabled'}>
             <span>${r.name}${owned ? ` <span class="good">${icon('check')}</span>` : ''}</span><span class="k">${cost}</span>
-            <span class="c">${locked ? 'Plan requis (ruines gardiennes)' : owned ? 'Déjà installé' : r.desc}</span></button>`;
+            <span class="c">${locked ? 'Plan requis (ruines gardiennes)' : owned ? 'Déjà installé' : decorate(r.desc)}</span></button>`;
         })
         .join('')}</div>`)
       .join('')}`;
@@ -614,7 +626,7 @@ function moduleEffect(k, v) {
     case 'scoop':
       return v <= 0 ? ['bad', 'Hors service : écopage impossible'] : ['', `Rendement d'écopage ${Math.round(v)} %`];
     case 'scanner':
-      return v < 25 ? ['bad', 'Scan détaillé impossible sous 25 %'] : ['', `Scan détaillé : ${G.manualScanCost(state)} énergie`];
+      return v < 25 ? ['bad', 'Scan détaillé impossible sous 25 %'] : ['', `Scan détaillé : ${energyN(G.manualScanCost(state))}`];
     case 'thrusters':
       return v < 20 ? ['bad', 'Atterrissage impossible sous 20 %'] : v < 50 ? ['mid', 'Atterrissage brutal probable (40 %)'] : ['', 'Atterrissage en douceur'];
     case 'life':
@@ -629,7 +641,7 @@ function modulesPanel() {
     .map(([k, v]) => {
       const lvl = v < 30 ? 'low' : v < 60 ? 'mid' : '';
       const [cls, fx] = moduleEffect(k, v);
-      return `<div class="module"><span>${MODULES[k].name}</span><span class="v ${lvl}">${Math.round(v)} %</span><span class="mini"><i class="${lvl}" style="width:${pct(v, 100)}%"></i></span><span class="fx ${cls}">${fx}</span></div>`;
+      return `<div class="module"><span>${MODULES[k].name}</span><span class="v ${lvl}">${Math.round(v)} %</span><span class="mini"><i class="${lvl}" style="width:${pct(v, 100)}%"></i></span><span class="fx ${cls}">${decorate(fx)}</span></div>`;
     })
     .join('');
   const ups = RECIPES.filter((r) => r.once && state.upgrades[r.id]);
@@ -641,7 +653,7 @@ function modulesPanel() {
     <div class="modules">${mods}</div>
     ${Object.values(s.modules).some((v) => v < 100) ? `<p class="muted mat-line">Réparation en <b>synthèse</b> ${kbd('Y')} : ${Object.entries(repair.cost).map(([m, n]) => mat(m, n, (s.materials[m] || 0) < n ? 'miss' : '')).join(' ')} pour +${state.passenger === 'engineer' ? 60 : 40} % au module le plus abîmé${G.canSynthesize(state, repair) ? '' : ' (matériaux insuffisants)'}.</p>` : ''}
     <h3>Améliorations</h3>
-    ${ups.length ? `<div class="stats-list">${ups.map((r) => `<div class="row"><span>${r.name}</span><span class="tag">${r.desc}</span></div>`).join('')}</div>` : '<p class="muted">Aucune pour l\'instant. Elles se fabriquent en synthèse.</p>'}
+    ${ups.length ? `<div class="stats-list">${ups.map((r) => `<div class="row"><span>${r.name}</span><span class="tag">${decorate(r.desc)}</span></div>`).join('')}</div>` : '<p class="muted">Aucune pour l\'instant. Elles se fabriquent en synthèse.</p>'}
     ${s.boost > 1 || state.passenger || state.flags.tankLeak ? `<h3>En cours</h3><div class="stats-list">
     ${s.boost > 1 ? `<div class="row"><span>FSD suralimenté</span><span class="tag">×${s.boost} au prochain saut</span></div>` : ''}
     ${state.passenger ? `<div class="row"><span>Passager</span><span class="tag">${esc(PASSENGERS[state.passenger].name)}</span></div><p class="muted">${esc(PASSENGERS[state.passenger].perk)}</p>` : ''}
@@ -657,7 +669,7 @@ function logPanel(title = 'Journal de bord') {
   return `<h2>${title}</h2><ol class="log">${state.log
     .slice()
     .reverse()
-    .map((l) => `<li class="${l.kind}"><span class="j">S${l.jump}</span>${esc(l.text)}</li>`)
+    .map((l) => `<li class="${l.kind}"><span class="j">S${l.jump}</span>${decorate(esc(l.text))}</li>`)
     .join('')}</ol>`;
 }
 
@@ -678,11 +690,11 @@ function bodyActions(b) {
     let why = '';
     if (state.ship.modules.scanner < 25) why = 'Scanner trop endommagé';
     else if (state.ship.energy < scanCost) why = 'Énergie insuffisante';
-    acts.push({ act: 'manual', icon: icon('scope'), label: 'Scan détaillé', short: 'Scan corps', cost: `${scanCost}${icon('bolt')}`, disabled: !!why, why, key: 'M' });
+    acts.push({ act: 'manual', icon: icon('scope'), label: 'Scan détaillé', short: 'Scan corps', cost: energyN(scanCost), disabled: !!why, why, key: 'M' });
   }
   if (b.landable && b.revealed > 0) {
     const check = G.canLand(state, b);
-    acts.push({ act: 'land', icon: icon('land'), label: 'Atterrir', cost: `${G.COSTS.land}${icon('bolt')}`, disabled: !check.ok, why: check.reason || '', primary: true, key: 'L' });
+    acts.push({ act: 'land', icon: icon('land'), label: 'Atterrir', cost: energyN(G.COSTS.land), disabled: !check.ok, why: check.reason || '', primary: true, key: 'L' });
   }
   return acts;
 }
@@ -744,7 +756,7 @@ function dockActions() {
           icon: takeoff ? icon('takeoff') : a.done ? icon('check') : '',
           label: takeoff ? 'Décoller' : a.label,
           short: SURFACE_SHORT[a.id],
-          cost: a.cost ? `${a.cost}${icon('bolt')}` : '',
+          cost: a.cost ? energyN(a.cost) : '',
           disabled: a.done || low,
           why: low ? 'Énergie insuffisante' : '',
           inlineWhy: false,
@@ -764,7 +776,7 @@ function dockActions() {
     acts.push(...bodyActions(b));
   }
   if (!(phoneUI.matches && sys.autoScanned)) acts.push(
-    { act: 'auto', icon: icon('radar'), label: 'Scan du système', short: 'Scanner', cost: `${G.COSTS.autoScan}${icon('bolt')}`, disabled: sys.autoScanned || state.ship.energy < G.COSTS.autoScan, why: sys.autoScanned ? 'Déjà fait' : '', inlineWhy: false, key: 'A', primary: !sys.autoScanned },
+    { act: 'auto', icon: icon('radar'), label: 'Scan du système', short: 'Scanner', cost: energyN(G.COSTS.autoScan), disabled: sys.autoScanned || state.ship.energy < G.COSTS.autoScan, why: sys.autoScanned ? 'Déjà fait' : '', inlineWhy: false, key: 'A', primary: !sys.autoScanned },
   );
   if (star.scoopable) acts.push({ act: 'scoop', icon: icon('fuel'), label: sys.scooped ? 'Écopage fait' : 'Écoper', short: sys.scooped ? 'Écopé' : 'Écoper', disabled: !G.canScoop(state), key: 'E' });
   if (star.boost) acts.push({ act: 'boost', icon: icon('bolt'), label: `Jet ×${star.boost}`, cost: 'dégâts', disabled: !G.canBoost(state), key: 'B' });
@@ -776,8 +788,8 @@ function dockActions() {
 
 function costLabel(cost = {}) {
   const parts = [];
-  if (cost.energy) parts.push(`${cost.energy}${icon('bolt')}`);
-  if (cost.fuel) parts.push(`${cost.fuel} t${icon('fuel')}`);
+  if (cost.energy) parts.push(energyN(cost.energy));
+  if (cost.fuel) parts.push(fuelT(cost.fuel));
   if (cost.mats) parts.push(Object.entries(cost.mats).map(([m, n]) => mat(m, n)).join(' '));
   return parts.join(', ');
 }
@@ -798,7 +810,7 @@ function effectsLine(effects = []) {
 function eventCard() {
   const ev = state.event;
   const choices = ev.outcome
-    ? `<div class="outcome"><p>${esc(ev.outcome)}</p>${effectsLine(ev.effects)}</div><div class="choices"><button class="primary" data-act="close">Continuer${kbd('Entrée')}</button></div>`
+    ? `<div class="outcome"><p>${decorate(esc(ev.outcome))}</p>${effectsLine(ev.effects)}</div><div class="choices"><button class="primary" data-act="close">Continuer${kbd('Entrée')}</button></div>`
     : `<div class="choices">${G.eventChoices(state)
         .map(({ choice, index, label, available }, n) => {
           const cost = costLabel(choice.cost);
@@ -816,7 +828,7 @@ function scoopCard() {
       const p = G.scoopPreview(state, id);
       const risk = Math.round(p.risk * 100);
       return `<button data-scoop="${id}" data-n="${i + 1}">${esc(a.name)} <span class="muted">· ${esc(a.desc)}</span>
-        <span class="cost">${p.min}–${p.max} t${icon('fuel')} · <span class="${risk >= 30 ? 'bad' : risk > 0 ? '' : 'good'}">surchauffe ${risk} %</span></span>${kbd(i + 1)}</button>`;
+        <span class="cost">${res('fuel', `${p.min}–${p.max} t`)} · <span class="${risk >= 30 ? 'bad' : risk > 0 ? '' : 'good'}">surchauffe ${risk} %</span></span>${kbd(i + 1)}</button>`;
     })
     .join('');
   return `<div class="card event-card" role="dialog" aria-labelledby="scp"><div class="eyebrow">${icon('fuel')}Écopage</div>
@@ -875,7 +887,7 @@ function shipPicker() {
     .map(([id, d]) => {
       const ok = isUnlocked(profile, id);
       return `<button data-ship="${id}" class="${id === shipChoice ? 'sel' : ''}" ${ok ? '' : 'disabled'} title="${esc(ok ? d.desc : d.unlock)}">
-        ${shipThumbUrl(id) ? `<img class="ship-thumb" src="${shipThumbUrl(id)}" alt="">` : ''}<b>${esc(d.name)}</b><span class="muted">${ok ? `${d.range} al · ${d.fuel} t · coque ${d.hull}` : 'Verrouillé'}</span></button>`;
+        ${shipThumbUrl(id) ? `<img class="ship-thumb" src="${shipThumbUrl(id)}" alt="">` : ''}<b>${esc(d.name)}</b><span class="muted">${ok ? `${d.range} al · ${fuelT(d.fuel)} · ${hullN(d.hull)}` : 'Verrouillé'}</span></button>`;
     })
     .join('')}</div>`;
 }
@@ -896,7 +908,7 @@ function titleCard() {
     <div class="kicker">Roguelite d'exploration spatiale</div>
     <div class="logo-big">It's Dangerous<span>Out There</span></div>
     <p class="motto">« La destination est certaine. Le voyage ne l'est jamais. »</p>
-    <p>Rejoignez <b>${esc(state.galaxy.destination.name)}</b>, à ${Math.round(state.galaxy.destination.dist)} années-lumière, à bord d'un ${esc(state.ship.name)}. Carburant, coque et énergie sont comptés.</p></div>
+    <p>Rejoignez <b>${esc(state.galaxy.destination.name)}</b>, à ${Math.round(state.galaxy.destination.dist)} années-lumière, à bord d'un ${esc(state.ship.name)}. ${res('fuel', 'Carburant')}, ${res('hull', 'coque')} et ${res('energy', 'énergie')} sont comptés.</p></div>
     <div class="tc-play">${shipPicker()}
     <div class="choices"><button class="primary" data-act="start">${icon('takeoff')}Décoller${kbd('Entrée')}</button></div>
     <details><summary>Comment jouer</summary><ul>
