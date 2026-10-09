@@ -132,13 +132,17 @@ const phoneLandscape = matchMedia('(orientation: landscape) and (max-height: 540
 // Téléphone en paysage (même requête que dans style.css) : les actions du corps choisi passent
 // dans la barre d'actions, toujours visible, au lieu du bas du panneau.
 const phoneUI = matchMedia('(orientation: landscape) and (max-height: 540px)');
-phoneUI.addEventListener('change', () => { placeBars(); if (view) update(); });
+// Disposition en trois colonnes (même requête que dans style.css) : journal à gauche, scène au centre
+// entre la barre du voyage et les jauges, panneau à droite, actions en bas de chaque côté.
+// Sur PC comme sur téléphone en paysage ; seule une fenêtre étroite garde l'ancienne disposition.
+const wideUI = matchMedia('(min-width: 901px), (orientation: landscape) and (max-height: 540px)');
+for (const mq of [phoneUI, wideUI]) mq.addEventListener('change', () => { placeBars(); if (view) update(); });
 
-// Téléphone en paysage : la barre du voyage passe au-dessus de la scène et les jauges en dessous,
-// dans la colonne centrale. Ailleurs, elles restent dans la barre du haut.
+// Trois colonnes : la barre du voyage passe au-dessus de la scène et les jauges en dessous,
+// dans la colonne centrale. Sinon, elles restent dans la barre du haut.
 function placeBars() {
   const top = $('.topbar');
-  if (phoneUI.matches) {
+  if (wideUI.matches) {
     $('.stage-wrap').prepend(top);
     $('.stage-wrap').append($('#gauges'));
   } else {
@@ -371,7 +375,7 @@ function bodyDetail(b) {
     }
     if (b.landed) chips.push('<span class="chip cyan">Visité</span>');
   }
-  const acts = phoneUI.matches ? '' : `<div class="actions">${bodyActions(b).map(actionButton).join('')}</div>`;
+  const acts = wideUI.matches ? '' : `<div class="actions">${bodyActions(b).map(actionButton).join('')}</div>`;
   return `<div class="detail">${text}<div class="chips">${chips.join('')}</div>${acts}</div>`;
 }
 
@@ -473,7 +477,7 @@ function jumpAction(sel) {
   return {
     act: 'jump',
     icon: icon('jump'),
-    label: phoneUI.matches ? 'Sauter' : `Sauter vers ${sel.c.name}`,
+    label: wideUI.matches ? 'Sauter' : `Sauter vers ${sel.c.name}`,
     cost: sel.check.ok ? fuelT(sel.fuel) : '',
     why: sel.check.ok ? '' : sel.check.reason,
     disabled: !sel.check.ok,
@@ -758,8 +762,8 @@ function renderDocks() {
   const acts = dockActions();
   const left = $('#dock-left');
   const journal = $('#journal');
-  left.hidden = journal.hidden = !phoneUI.matches;
-  if (!phoneUI.matches) {
+  left.hidden = journal.hidden = !wideUI.matches;
+  if (!wideUI.matches) {
     $('#dock').innerHTML = acts.map(actionButton).join('');
     return;
   }
@@ -768,7 +772,10 @@ function renderDocks() {
   const shown = acts.filter((a) => !a.sep);
   left.innerHTML = column(shown.filter(isLeft));
   $('#dock').innerHTML = column(shown.filter((a) => !isLeft(a)));
+  // Le journal est redessiné à chaque mise à jour : on garde l'endroit où le joueur lisait.
+  const scroll = journal.scrollTop;
   journal.innerHTML = logPanel('Journal');
+  journal.scrollTop = scroll;
 }
 
 // Libellés courts des actions de surface pour la barre d'actions du téléphone.
@@ -820,11 +827,11 @@ function dockActions() {
   const sys = state.system;
   const star = STAR_CLASSES[sys.star];
   const acts = [];
-  if (phoneUI.matches) {
+  if (wideUI.matches) {
     const b = sys.bodies.find((x) => x.id === view.selectedBodyId);
     acts.push(...bodyActions(b));
   }
-  if (!(phoneUI.matches && sys.autoScanned)) acts.push(
+  if (!(wideUI.matches && sys.autoScanned)) acts.push(
     { act: 'auto', icon: icon('radar'), label: 'Scan du système', short: 'Scanner', cost: energyN(G.COSTS.autoScan), disabled: sys.autoScanned || state.ship.energy < G.COSTS.autoScan, why: sys.autoScanned ? 'Déjà fait' : '', inlineWhy: false, key: 'A', primary: !sys.autoScanned },
   );
   if (star.scoopable) acts.push({ act: 'scoop', icon: icon('fuel'), label: sys.scooped ? 'Écopage fait' : 'Écoper', short: sys.scooped ? 'Écopé' : 'Écoper', disabled: !G.canScoop(state), key: 'E' });
@@ -1082,7 +1089,7 @@ function update() {
   placeTip();
 
   // Panneau latéral
-  if (phoneUI.matches && view.tab === 'log') view.tab = 'ctx';
+  if (wideUI.matches && view.tab === 'log') view.tab = 'ctx';
   $('#tab-ctx').innerHTML = `${ctxTabLabel()}`;
   for (const b of document.querySelectorAll('.tabs [data-tab]')) b.setAttribute('aria-selected', String(b.dataset.tab === view.tab));
   const panel = $('#panel');

@@ -986,6 +986,132 @@ button > .ico:first-child { margin-right: 6px; }
   .gauge { column-gap: 6px; }
 }
 
+/* ---------- Disposition en trois colonnes (PC et téléphone en paysage) ----------
+   Même interface partout où la largeur le permet :
+   - au centre, la progression du voyage, la scène, puis les jauges, à la largeur de la scène ;
+   - à gauche, le journal, avec les actions d'appoint en bas ;
+   - à droite, le panneau (Système / Modules), avec les actions du voyage en bas.
+   main.js (placeBars) déplace la barre du voyage et les jauges dans .stage-wrap. Les tailles propres
+   au PC et au téléphone sont dans les blocs suivants. */
+
+@media (min-width: 901px), (orientation: landscape) and (max-height: 540px) {
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    /* Hauteur mesurée en JS (--app-h) : certains navigateurs Android (Samsung) annoncent un
+       100dvh plus haut que la zone réellement visible, ce qui poussait les boutons hors écran. */
+    position: fixed;
+    inset: 0;
+    min-height: 0;
+    height: var(--app-h, 100dvh);
+    display: grid;
+    grid-template-columns: var(--lcol) minmax(0, 1fr) var(--rcol);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'journal stage tabs'
+      'journal stage panel'
+      'ldock   stage dock';
+    padding: var(--pad-t) var(--pad-r) var(--pad-b) var(--pad-l);
+  }
+  .layout, .stage-col, .side { display: contents; }
+  .stage-wrap {
+    grid-area: stage;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 0;
+    container-type: size;
+  }
+  /* --bars : hauteur de la barre du voyage, des jauges et des espacements. */
+  .stage-wrap > * { --sw: min(calc(100cqw - 2 * var(--bevel)), calc((100cqh - 2 * var(--bevel) - var(--bars)) * 16 / 9)); flex: none; }
+
+  .topbar {
+    width: calc(var(--sw) + 2 * var(--bevel));
+    margin: 0;
+    border: 0;
+    display: flex;
+    align-items: center;
+    background: rgba(8, 9, 32, 0.7);
+    clip-path: var(--step2);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .logo { display: none; }
+  .route { flex: 1 1 auto; }
+  .route .end.muted { max-width: 22%; }
+  .route .end.goal { max-width: 34%; }
+  .route .stats { background: none; }
+  .gauges {
+    width: calc(var(--sw) + 2 * var(--bevel));
+    align-items: center;
+    background: rgba(8, 9, 32, 0.7);
+    clip-path: var(--step2);
+  }
+  .gauge { flex: 1 1 0; width: auto; min-width: 0; }
+  .gauge .delta { display: block; top: auto; bottom: calc(100% + 2px); }
+
+  .stage { margin: 0; width: var(--sw); }
+
+  .dock { grid-area: dock; }
+  .dock-left { grid-area: ldock; }
+  .dock {
+    width: auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: stretch;
+    flex-wrap: nowrap;
+  }
+  .dock:empty { display: none; }
+  .dock button { display: inline-flex; align-items: center; justify-content: center; text-align: center; }
+  .dock button:has(.why) { flex-wrap: wrap; }
+  .dock button .why { flex-basis: 100%; white-space: normal; }
+  .dock .sep { display: none; }
+  .dock .hint { justify-content: center; white-space: normal; text-align: center; }
+
+  .journal { grid-area: journal; min-height: 0; }
+  .journal h2 { letter-spacing: 1px; text-transform: uppercase; color: var(--violet); text-shadow: none; }
+  .tabs { grid-area: tabs; }
+  .tabs [data-tab='log'] { display: none; }
+  .panel { grid-area: panel; max-height: none; }
+  .journal.panel { grid-area: journal; }
+}
+
+/* PC : mêmes colonnes, en plus grand, avec les raccourcis clavier dans les boutons. */
+@media (min-width: 901px) and (min-height: 541px) {
+  :root {
+    --lcol: clamp(200px, 16vw, 300px);
+    --rcol: clamp(280px, 22vw, 380px);
+    --side: var(--rcol);
+    --pad-t: 14px;
+    --pad-b: 14px;
+    --pad-l: 16px;
+    --pad-r: 16px;
+    --bevel: 10px;
+  }
+  body { gap: 10px 16px; }
+  .stage-wrap { --bars: 124px; gap: 12px; }
+  .topbar { height: 50px; padding: 0 14px; gap: 18px; }
+  .gauges { height: 50px; gap: 22px; padding: 0 14px; }
+  .gauge { column-gap: 10px; }
+  .gauge .lbl { font-size: 0.85em; }
+  .gauge .track { height: 12px; }
+  .dock { gap: 8px; }
+  .dock button { min-height: 46px; padding: 2px 8px; white-space: normal; }
+  .dock button > .ico:first-child { margin-right: 6px; }
+  .dock .hint { padding: 10px; }
+  .journal h2 { font-size: 0.9em; }
+  .journal .log li { font-size: 0.88em; }
+  /* Titre et fin de partie : plein écran, la scène est désormais trop petite pour les contenir. */
+  .overlay:has(.title-card), .overlay:has(.end) { position: fixed; z-index: 20; }
+}
+@media (min-width: 901px) and (min-height: 541px) and (max-height: 820px) {
+  .dock { gap: 6px; }
+  .dock button { min-height: 40px; }
+}
+
 /* ---------- Téléphone en paysage ----------
    Tout tient dans l'écran, sans défilement de page, pensé pour la hauteur réelle d'un téléphone
    Android avec la barre d'adresse de Chrome (300 à 360 px). Trois colonnes :
@@ -1002,78 +1128,24 @@ button > .ico:first-child { margin-right: 6px; }
     --pad-b: max(4px, env(safe-area-inset-bottom));
     --pad-l: max(6px, env(safe-area-inset-left));
     --pad-r: max(6px, env(safe-area-inset-right));
+    --bevel: 6px;
   }
-  html, body { font-size: 13px; height: 100%; overflow: hidden; overscroll-behavior: none; }
-  body {
-    /* Hauteur mesurée en JS (--app-h) : certains navigateurs Android (Samsung) annoncent un
-       100dvh plus haut que la zone réellement visible, ce qui poussait les boutons hors écran. */
-    position: fixed;
-    inset: 0;
-    min-height: 0;
-    height: var(--app-h, 100dvh);
-    display: grid;
-    grid-template-columns: var(--lcol) minmax(0, 1fr) var(--rcol);
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    grid-template-areas:
-      'journal stage tabs'
-      'journal stage panel'
-      'ldock   stage dock';
-    gap: 5px 6px;
-    padding: var(--pad-t) var(--pad-r) var(--pad-b) var(--pad-l);
-  }
-  .layout, .stage-col, .side { display: contents; }
-  /* Colonne centrale : progression du voyage, scène, jauges, empilées et centrées (main.js déplace
-     la barre d'état et les jauges dans .stage-wrap). Elles prennent la largeur de la scène. */
-  .stage-wrap {
-    --bars: 74px; /* barre du voyage + jauges + espacements */
-    grid-area: stage;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    min-width: 0;
-    min-height: 0;
-    container-type: size;
-  }
-  .stage-wrap > * { --sw: min(calc(100cqw - 12px), calc((100cqh - 12px - var(--bars)) * 16 / 9)); flex: none; }
+  html, body { font-size: 13px; }
+  body { gap: 5px 6px; }
+  .stage-wrap { --bars: 74px; gap: 6px; }
 
   /* Barre du voyage au-dessus de la scène */
-  .topbar {
-    width: calc(var(--sw) + 12px);
-    height: 28px;
-    margin: 0;
-    padding: 0 8px;
-    border: 0;
-    gap: 8px;
-    grid-template-columns: minmax(0, 1fr) auto;
-    background: rgba(8, 9, 32, 0.7);
-    clip-path: var(--step2);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-  .logo { display: none; }
+  .topbar { height: 28px; padding: 0 8px; gap: 8px; }
   .route { gap: 6px; font-size: 0.92em; }
-  .route .end.muted { max-width: 22%; }
   .route .end.muted .ico { display: none; }
   .route .track-wrap { flex: 1 1 60px; min-width: 50px; margin: 0 10px 0 14px; }
-  .route .end.goal { max-width: 34%; }
-  .route .stats { padding: 0 2px; background: none; }
+  .route .stats { padding: 0 2px; }
 
   /* Jauges sous la scène, sur toute sa largeur */
-  .gauges {
-    width: calc(var(--sw) + 12px);
-    height: 28px;
-    gap: 10px;
-    padding: 0 8px;
-    align-items: center;
-    background: rgba(8, 9, 32, 0.7);
-    clip-path: var(--step2);
-  }
-  .gauge { flex: 1 1 0; width: auto; min-width: 0; column-gap: 6px; }
+  .gauges { height: 28px; gap: 10px; padding: 0 8px; }
+  .gauge { column-gap: 6px; }
   .gauge .lbl { font-size: 0.9em; }
   .gauge .track { margin-top: 2px; height: 8px; }
-  .gauge .delta { top: auto; bottom: calc(100% + 2px); }
   .fs {
     width: 28px;
     height: 24px;
@@ -1088,32 +1160,15 @@ button > .ico:first-child { margin-right: 6px; }
 
   /* Scène au centre */
   .stage {
-    margin: 0;
-    width: var(--sw);
     box-shadow: 0 0 0 6px rgba(4, 5, 24, 0.2), 0 0 40px rgba(110, 100, 255, 0.2);
   }
   .stage::after { inset: -6px; border-width: 8px; border-image: var(--f-stage) 6 / 8px stretch; }
   .tip { font-size: 0.85em; }
 
   /* Actions : une colonne de chaque côté, en bas, l'action principale au plus près du pouce */
-  .dock { grid-area: dock; }
-  .dock-left { grid-area: ldock; }
-  .dock {
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    align-items: stretch;
-    flex-wrap: nowrap;
-    gap: 4px;
-  }
-  .dock:empty { display: none; }
+  .dock { gap: 4px; }
   .dock button {
-    display: inline-flex;
     flex-wrap: nowrap;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
     min-height: 36px;
     padding: 0 2px;
     border-width: 6px;
@@ -1122,25 +1177,18 @@ button > .ico:first-child { margin-right: 6px; }
     line-height: 1.15;
     white-space: nowrap;
   }
-  .dock button:has(.why) { flex-wrap: wrap; }
-  .dock button .why { flex-basis: 100%; white-space: normal; }
   .dock button > .ico:first-child { margin-right: 4px; width: 14px; height: 14px; }
   .dock button .cost { margin-left: 4px; padding: 0 3px; }
-  .dock .sep { display: none; }
-  .dock .hint { padding: 6px; font-size: 0.95em; justify-content: center; white-space: normal; text-align: center; }
+  .dock .hint { padding: 6px; font-size: 0.95em; }
 
   /* Colonne de gauche : journal */
-  .journal { grid-area: journal; min-height: 0; }
-  .journal h2 { font-size: 0.95em; letter-spacing: 1px; text-transform: uppercase; color: var(--violet); text-shadow: none; }
+  .journal h2 { font-size: 0.95em; }
   .journal .log li { font-size: 0.9em; }
 
   /* Colonne de droite : onglets Système / Modules et panneau */
-  .tabs { grid-area: tabs; }
-  .tabs [data-tab='log'] { display: none; }
   .tabs button { padding: 3px 2px 4px; font-size: 0.95em; }
   .tabs button[aria-selected='true'] { border-width: 6px; border-image-width: 6px; }
-  .panel { grid-area: panel; padding: 2px 4px 6px; border-width: 6px; border-image-width: 6px; max-height: none; }
-  .journal.panel { grid-area: journal; }
+  .panel { padding: 2px 4px 6px; border-width: 6px; border-image-width: 6px; }
 
   /* Panneau condensé */
   .panel h2 { font-size: 1.1em; margin-bottom: 4px; }
