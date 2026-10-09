@@ -1,6 +1,6 @@
 // Sprites pixel art définis en texte : une lettre = une couleur de palette.
 //
-// Vaisseau : Zorgon Peterson Mandalay (vue de profil, nez à droite).
+// Vaisseaux : Mandalay, Diamondback Explorer, Krait Phantom et Asp Explorer (profil, nez à droite).
 // Astronaute : combinaison EVA blanche, visière dorée, sac de survie.
 // Chaque image fixe est pré-rendue une seule fois dans un petit canvas
 // hors écran (création paresseuse : rien n'est créé à l'import du module),
@@ -11,6 +11,7 @@
 // Les dessins sont agrandis par Scale2x, qui arrondit les diagonales sans flou, puis le
 // contour est adouci côté lumière ; panache et effets sont tracés directement au pixel fin.
 import { K } from './scenery.js';
+import { SHIP_MODELS } from './shipsprites.js';
 const PX = 1 / K;
 const snap = (v) => Math.round(v * K) / K;
 
@@ -34,66 +35,47 @@ export const SPRITE_PALETTE = {
 };
 
 // ---------------------------------------------------------------------------
-// Vaisseau : grande version (surface des planètes), 64×20.
-const SHIP_ROWS = [
-  '..ooo...........................................................',
-  '..oaloo.........................................................',
-  '...odlmsooo.........ooooooooo...................................',
-  '....oodssssooooooooollllllllloooo...............................',
-  '.....ooooowwwwwwwwwwwwwwwwwwwwwwo...............................',
-  '......ooolllllllllllllllllllllllwoooo...........................',
-  '.....oerwlllllllllllllllmllllllllwwwwooo.......ooooo............',
-  '.....oerlsssssssssssslllmllllllllllllwwwooo...ocggkcooo.........',
-  '.....odddddddddddddddsssdsmmmmmmmllllmllwwwooockkccccccoo.......',
-  '.oooowwwwlwwwwwwwlwwwdddddsssmmmmmmmmmlllllwwwwwwcckkkcccoo.....',
-  '.orllllllmlllllllmlllwwwwwdddssmmmmmmsmmllllllwwwwaaaackkccoo...',
-  '.oerlllllmlllllllmllllllllwwwddaaaabaaaaaaaaaabaaawwwwwwwwwwwooo',
-  '.oermmmmmsaaaaaaabaaaaaaaaaaassssssssdssssssssdsslllllmmmooooo..',
-  '.oermmmmmsmmmmmmmsmsssssssdddddddddddddlllllsoooooooooooo.......',
-  '.oersssssdsssssssdsddddddddddddddllllllssoooo...................',
-  '.orddddddodddddddodssssssslllllllsssooooo.......................',
-  '...oooooooooossssdslllllllssssoooooo............................',
-  '.............oaalllsssoooooooo..................................',
-  '.........oaaaaoooooooo..........................................',
-  '................................................................',
-];
-
-// Petite version (scènes spatiales), 30×11.
-const SHIP_SMALL_ROWS = [
-  '.oo...........................',
-  '..oaoo........................',
-  '...osdoooooooooo..............',
-  '...owwwwwwwwwwwwoooooo........',
-  '...oddddddddllllwwwkgcoooo....',
-  'oooowwwwwwwwmmmmmmmccccwwwooo.',
-  'oerlllllllllmaaaaaaaaaaammlwoo',
-  'oermaaaaaaamssssssddddooooo...',
-  '.ossssssssssommmmlllloooo.....',
-  '..oaassssssmmmooooooo.........',
-  '...ooooooooooo................',
-];
-
+// Vaisseaux : quatre modèles dessinés au pixel fin (shipsprites.js), même cadre pour tous.
 export const SHIP_W = 64;
 export const SHIP_H = 20;
 export const SHIP_GEAR_H = 4;
 export const SHIP_SMALL_W = 30;
 export const SHIP_SMALL_H = 11;
-// Sas / départ de la rampe (sous la coque, au milieu, juste derrière le train avant).
-export const SHIP_HATCH = { x: 47, y: 14 };
+export const SHIP_MODEL_IDS = Object.keys(SHIP_MODELS);
+const modelOf = (id) => SHIP_MODELS[id] || SHIP_MODELS.mandalay;
+const modelId = (id) => (SHIP_MODELS[id] ? id : 'mandalay');
 
-// Tuyères : x = colonne du bord arrière, y0..y1 = lignes du jet ; le panache part vers la gauche.
-const LARGE_PORTS = [
-  { x: 1, y0: 10, y1: 15, core: [11, 14], len: 18 },
-  { x: 5, y0: 6, y1: 7, core: [6, 7], len: 9 },
-];
-const SMALL_PORTS = [
-  { x: 0, y0: 6, y1: 7, core: [6, 7], len: 11 },
-];
-// Jambes du train : x = colonne de la jambe (2 px de large).
-const GEAR_X = [22, 39, 52];
-// Feux de navigation : [x, y, couleur, décalage de phase]
-const LARGE_LIGHTS = [[10, 18, '#ff4a4a', 0], [3, 1, '#eaffff', 0.55]];
-const SMALL_LIGHTS = [[3, 9, '#ff4a4a', 0], [1, 0, '#eaffff', 0.55]];
+// Tuyères : suites verticales de pixels « e » dans la colonne de gauche (pixels fins).
+// Le panache part vers la gauche, sa longueur suit la hauteur de la tuyère.
+const portsCache = new Map();
+function portsOf(id, small) {
+  const key = id + (small ? '|s' : '');
+  let ports = portsCache.get(key);
+  if (ports) return ports;
+  const rows = small ? modelOf(id).small : modelOf(id).rows;
+  ports = [];
+  for (let y = 0; y < rows.length; y++) {
+    if (rows[y][0] !== 'e') continue;
+    let y1 = y;
+    while (y1 + 1 < rows.length && rows[y1 + 1][0] === 'e') y1++;
+    const h = (y1 - y + 1) / K;
+    ports.push({ y0: y, y1, len: small ? 6 + 2.5 * h : 8 + 4 * h });
+    y = y1;
+  }
+  portsCache.set(key, ports);
+  return ports;
+}
+
+// Feux de la petite version : ceux de la grande, ramenés à son échelle.
+const smallLight = ([x, y, c, ph]) => [Math.round((x * SHIP_SMALL_W) / SHIP_W), Math.round((y * SHIP_SMALL_H) / SHIP_H), c, ph];
+
+// Sas / départ de la rampe : sous la coque, juste derrière le train avant.
+export function shipHatch(id) {
+  const x = 47;
+  return { x, y: gearTop(modelId(id), x) - 1 };
+}
+// Compatibilité : sas du Mandalay.
+export const SHIP_HATCH = { x: 47, y: 14 };
 
 // ---------------------------------------------------------------------------
 // Astronaute : 12×16, tourné vers la droite. Les pieds touchent la ligne 15.
@@ -276,7 +258,7 @@ export function scale2x(rows) {
 
 // Contour adouci : sur le dessus (côté lumière), le trait noir devient une ombre bleutée
 // quand il borde une surface claire ; il reste sombre partout ailleurs pour la lisibilité.
-const LIGHT = new Set(['w', 'l', 'm', 'a', 'g', 'V']);
+const LIGHT = new Set(['w', 'l', 'm', 'a', 'A', 'g', 'h', 'V']);
 function softenOutline(rows) {
   const h = rows.length, w = rows[0].length;
   const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? '.' : rows[y][x]);
@@ -288,22 +270,23 @@ function softenOutline(rows) {
 }
 
 const hiRes = new Map();
-function rowsK(key, rows) {
+// fine : lignes déjà dessinées au pixel fin (×2), seulement agrandies si K > 2.
+function rowsK(key, rows, fine = false) {
   let r = hiRes.get(key);
   if (!r) {
     r = rows;
-    for (let s = 1; s < K; s *= 2) r = scale2x(r);
+    for (let s = fine ? 2 : 1; s < K; s *= 2) r = scale2x(r);
     r = softenOutline(r);
     hiRes.set(key, r);
   }
   return r;
 }
 
-function bake(key, rows, flip, palette = SPRITE_PALETTE) {
+function bake(key, rows, flip, palette = SPRITE_PALETTE, fine = false) {
   const k = key + (flip ? '|f' : '');
   let c = baked.get(k);
   if (c) return c;
-  const hr = rowsK(key, rows);
+  const hr = rowsK(key, rows, fine);
   c = makeCanvas(hr[0].length, hr.length);
   const g = c.getContext('2d');
   drawSprite(g, hr, palette, 0, 0, 1, flip);
@@ -321,48 +304,50 @@ function hash(n) {
 
 // ---------------------------------------------------------------------------
 // x, y = coin haut gauche de la coque ; le vaisseau regarde à droite sauf si flip.
-export function drawShip(ctx, x, y, { t = 0, thrust = 0, gear = 0, flip = false, small = false } = {}) {
+// model : 'mandalay' | 'dbx' | 'krait' | 'asp' (Mandalay par défaut).
+export function drawShip(ctx, x, y, { t = 0, thrust = 0, gear = 0, flip = false, small = false, model = 'mandalay' } = {}) {
   x = snap(x); y = snap(y);
   t = Number.isFinite(t) ? t : 0;
+  const id = modelId(model);
+  const M = SHIP_MODELS[id];
   const W = small ? SHIP_SMALL_W : SHIP_W;
-  const H = small ? SHIP_SMALL_H : SHIP_H;
   // rectangle local -> écran (gère le miroir)
   const rect = (lx, ly, w, h) => ctx.fillRect(flip ? x + W - lx - w : x + lx, y + ly, w, h);
   const th = Math.max(0, Math.min(1, thrust));
+  const ports = portsOf(id, small);
 
   // 1. Panache des moteurs (derrière la coque), tracé au pixel fin : un fuseau bleu
   // translucide, un jet cyan, un cœur presque blanc, et une traînée qui s'efface.
   if (th > 0.01) {
-    const ports = small ? SMALL_PORTS : LARGE_PORTS;
     ports.forEach((p, pi) => {
       const flick = 0.82 + 0.18 * hash(Math.floor(t * 30) + pi * 7.3);
       const L = Math.max(2, p.len * th * flick + 2);
-      const mid = (p.y0 + p.y1 + 1) / 2;
-      const half = (p.y1 - p.y0 + 1) / 2 + 1;
-      const c0 = p.core[0], c1 = p.core[1] + 1;
-      for (let ry = (p.y0 - 1) * K; ry < (p.y1 + 2) * K; ry++) {
+      const ya = p.y0 / K, yb = (p.y1 + 1) / K;
+      const mid = (ya + yb) / 2;
+      const half = (yb - ya) / 2 + 1;
+      for (let ry = p.y0 - K; ry < p.y1 + 1 + K; ry++) {
         const ly = ry / K;
         const k = 1 - Math.abs(ly + PX / 2 - mid) / half;
         if (k <= 0) continue;
         const outer = snap(L * (0.3 + 0.7 * Math.sqrt(k)));
         const inner = snap(L * 0.72 * k);
-        const inCore = ly >= c0 && ly < c1;
+        const inCore = ly >= ya && ly < yb;
         const core = inCore ? snap(L * 0.42 * k) : 0;
         ctx.globalAlpha = 0.4 * th * (0.5 + 0.5 * k);
         ctx.fillStyle = '#3d7cff';
-        rect(p.x - outer, ly, outer, PX);
+        rect(-outer, ly, outer, PX);
         ctx.globalAlpha = 0.85;
         ctx.fillStyle = '#62d6ff';
-        if (inner > 0) rect(p.x - inner, ly, inner, PX);
+        if (inner > 0) rect(-inner, ly, inner, PX);
         ctx.fillStyle = '#eafcff';
-        if (core > 0) rect(p.x - core, ly, core, PX);
+        if (core > 0) rect(-core, ly, core, PX);
         // traînée ténue au bout du jet (lignes centrales)
         if (inCore && th > 0.3) {
           const tail = snap(L * 0.6 * th);
           for (let j = 0; j < 3; j++) {
             ctx.globalAlpha = 0.18 * th * (1 - j / 3);
             ctx.fillStyle = '#62d6ff';
-            rect(p.x - outer - tail * (j + 1) / 3, ly, tail / 3, PX);
+            rect(-outer - tail * (j + 1) / 3, ly, tail / 3, PX);
           }
         }
       }
@@ -374,8 +359,8 @@ export function drawShip(ctx, x, y, { t = 0, thrust = 0, gear = 0, flip = false,
   const g = typeof gear === 'boolean' ? (gear ? 1 : 0) : Math.max(0, Math.min(1, gear));
   if (!small && g > 0) {
     const ground = SHIP_H + SHIP_GEAR_H - 1;
-    for (const gx of GEAR_X) {
-      const top = gearTop(gx);
+    for (const gx of M.gear) {
+      const top = gearTop(id, gx);
       const full = ground - 1 - top; // longueur de jambe quand le train est sorti
       const len = Math.round(g * full);
       // jambe : contour + 2 px (clair à gauche, ombre à droite)
@@ -392,26 +377,17 @@ export function drawShip(ctx, x, y, { t = 0, thrust = 0, gear = 0, flip = false,
   }
 
   // 3. Coque pré-rendue
-  put(ctx, bake(small ? 'shipS' : 'shipL', small ? SHIP_SMALL_ROWS : SHIP_ROWS, flip), x, y);
+  put(ctx, bake(`ship_${id}${small ? 'S' : 'L'}`, small ? M.small : M.rows, flip, M.palette, true), x, y);
 
-  // 4. Tuyères : froides au repos, incandescentes avec la poussée
-  {
-    const ports = small ? SMALL_PORTS : LARGE_PORTS;
-    for (const p of ports) {
-      const px = p.x + 1;
-      for (let ry = p.core[0]; ry <= p.core[1]; ry++) {
-        if (th > 0.01) {
-          ctx.fillStyle = th > 0.5 ? '#eafcff' : '#62d6ff';
-        } else {
-          ctx.fillStyle = (ry - p.core[0]) % 2 === 0 ? '#2b3d63' : '#24314f';
-        }
-        rect(px, ry, 1, 1);
-      }
-    }
+  // 4. Tuyères : sombres au repos, incandescentes avec la poussée (pixel fin)
+  if (th > 0.01) {
+    ctx.fillStyle = th > 0.5 ? '#eafcff' : '#62d6ff';
+    for (const p of ports) rect(0, p.y0 / K, small ? PX : 1, (p.y1 - p.y0 + 1) / K);
   }
 
   // 5. Feux de navigation clignotants
-  for (const [lx, ly, col, ph] of small ? SMALL_LIGHTS : LARGE_LIGHTS) {
+  for (const light of M.lights) {
+    const [lx, ly, col, ph] = small ? smallLight(light) : light;
     const f = ((((t + ph) % 1.1) + 1.1) % 1.1);
     if (f < 0.22) {
       // Un éclat fin et un petit halo qui s'éteint en douceur.
@@ -426,17 +402,26 @@ export function drawShip(ctx, x, y, { t = 0, thrust = 0, gear = 0, flip = false,
   }
 }
 
-// Ligne où la jambe du train sort (juste sous la coque, colonne gx).
+// Ligne logique où la jambe du train sort (juste sous la coque, colonnes gx et gx + 1).
 const gearTops = new Map();
-function gearTop(gx) {
-  let v = gearTops.get(gx);
+function gearTop(id, gx) {
+  const key = id + '|' + gx;
+  let v = gearTops.get(key);
   if (v !== undefined) return v;
+  const rows = modelOf(id).rows;
   v = 0;
-  for (let j = SHIP_ROWS.length - 1; j >= 0; j--) {
-    if (SHIP_ROWS[j][gx] !== '.' || SHIP_ROWS[j][gx + 1] !== '.') { v = j + 1; break; }
+  for (let j = rows.length - 1; j >= 0 && !v; j--) {
+    for (let i = gx * 2; i < gx * 2 + 4; i++) if (rows[j][i] && rows[j][i] !== '.') { v = Math.ceil((j + 1) / 2); break; }
   }
-  gearTops.set(gx, v);
+  gearTops.set(key, v);
   return v;
+}
+
+// Miniature d'un modèle (choix du vaisseau) : image pixel fin, sans train ni panache.
+export function shipThumb(model) {
+  const id = modelId(model);
+  const M = SHIP_MODELS[id];
+  return bake(`ship_${id}L`, M.rows, false, M.palette, true);
 }
 
 // x, y = coin haut gauche ; pose : 'walk' | 'idle' | 'scan' ; t en secondes.

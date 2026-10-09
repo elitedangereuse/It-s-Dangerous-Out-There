@@ -5,6 +5,7 @@ import * as G from './game.js';
 import { STAR_CLASSES, BODY_TYPES, MATERIALS, MODULES, RECIPES, REGION_TYPES, SCOOP_APPROACHES, SHIPS, PASSENGERS, CODEX, KNOWLEDGE } from './data.js';
 import { loadProfile, saveProfile, absorbRun, gameOptions, isUnlocked } from './profile.js';
 import { createRenderer, bodyAtmosphere, W, H, LANDING_DURATION, TAKEOFF_DURATION, JUMP_DURATION } from './render.js';
+import { shipThumb } from './sprites.js';
 import { dist } from './galaxy.js';
 import { EVENT_INTRO } from './eventscenes.js';
 
@@ -813,12 +814,21 @@ function careerNotes() {
   return notes.length ? `<p class="career">${notes.join('<br>')}</p>` : '';
 }
 
+// Miniatures des vaisseaux (pixel art pré-rendu), calculées une seule fois.
+const thumbs = {};
+function shipThumbUrl(id) {
+  if (!(id in thumbs)) {
+    try { thumbs[id] = shipThumb(id).toDataURL(); } catch { thumbs[id] = ''; }
+  }
+  return thumbs[id];
+}
+
 function shipPicker() {
   return `<div class="ships">${Object.entries(SHIPS)
     .map(([id, d]) => {
       const ok = isUnlocked(profile, id);
       return `<button data-ship="${id}" class="${id === shipChoice ? 'sel' : ''}" ${ok ? '' : 'disabled'} title="${esc(ok ? d.desc : d.unlock)}">
-        <b>${esc(d.name)}</b><span class="muted">${ok ? `${d.range} al · ${d.fuel} t · coque ${d.hull}` : 'Verrouillé'}</span></button>`;
+        ${shipThumbUrl(id) ? `<img class="ship-thumb" src="${shipThumbUrl(id)}" alt="">` : ''}<b>${esc(d.name)}</b><span class="muted">${ok ? `${d.range} al · ${d.fuel} t · coque ${d.hull}` : 'Verrouillé'}</span></button>`;
     })
     .join('')}</div>`;
 }

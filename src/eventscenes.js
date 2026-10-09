@@ -400,7 +400,7 @@ export function createEventScenes(R) {
       shipIn(st, t);
       // Vaisseau en panne : il dérive, feux éteints, balise rouge.
       const dx = 214 + Math.sin(t * 0.3) * 3, dy = 70 + Math.sin(t * 0.4) * 2;
-      R.drawShip(dx, dy, t, { small: true, flip: true });
+      R.drawShip(dx, dy, t, { small: true, flip: true, npc: true });
       const blink = Math.floor(st * 2.5) % 2 === 0;
       if (blink) {
         R.halo(ctx, dx + 15, dy - 1, 0.5, 7, '#ff5a5a', 0.6);
@@ -498,7 +498,7 @@ export function createEventScenes(R) {
       }
       const shake = st > 3 ? Math.sin(st * 60) * 1.5 : 0;
       const k2 = easeOut(st / 1.2);
-      R.drawShip(320 - k2 * 90, 70 + shake, t, { flip: true, thrust: 0.6 });
+      R.drawShip(320 - k2 * 90, 70 + shake, t, { flip: true, thrust: 0.6, npc: true });
       flash('#fff1c0', (st - 3.2) * 2);
     },
     thargoidProbe(view, t, st) {
@@ -522,7 +522,7 @@ export function createEventScenes(R) {
       shipIn(st, t, { x: 20, y: 120 });
       // Le vaisseau abandonné, moteurs coupés, face à nous.
       const dx = 196 + Math.sin(t * 0.25) * 2, dy = 56 + Math.sin(t * 0.35) * 2;
-      R.drawShip(dx, dy, t, { flip: true });
+      R.drawShip(dx, dy, t, { flip: true, model: view.state?.derelict || null, npc: true });
       if (st > 1.2) {
         // Les feux de position répondent encore, faiblement.
         if (Math.floor(st * 1.5) % 2) R.halo(ctx, dx + 4, dy + 11, 0.5, 5, '#7df0b4', 0.5);
@@ -583,7 +583,7 @@ export function createEventScenes(R) {
       if (st > 1.4) pulseRings(sx + 30, sy + 8, st, '#ffb054', { period: 1.6, max: 46, n: 2 });
       if (st > 2) {
         const k = easeOut((st - 2) / 1.6);
-        R.drawShip(330 - k * 90, 40 + k * 20, t, { small: true, flip: true, thrust: 1 });
+        R.drawShip(330 - k * 90, 40 + k * 20, t, { small: true, flip: true, thrust: 1, npc: true });
       }
     },
   };
@@ -663,7 +663,7 @@ export function createEventScenes(R) {
       ctx.save();
       ctx.translate(x + 32, y - 6);
       ctx.rotate(0.28);
-      R.drawShip(-32, -10, t, { flip: true });
+      R.drawShip(-32, -10, t, { flip: true, npc: true });
       ctx.restore();
       // Bourrelet du cratère par-dessus la coque enfoncée.
       ctx.fillStyle = css(b.P.dust);

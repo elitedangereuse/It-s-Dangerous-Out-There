@@ -860,6 +860,8 @@ button > .ico:first-child { margin-right: 6px; }
 .ships button .muted { font-size: 0.78em; }
 .ships button.sel { border-image-source: var(--f-btn-hover); color: var(--accent-hi); }
 .ships button:disabled b { color: var(--faint); }
+.ships .ship-thumb { display: block; width: 100%; max-width: 128px; height: auto; margin: 2px auto 0; image-rendering: pixelated; }
+.ships button:disabled .ship-thumb { filter: grayscale(1) brightness(0.45); }
 
 /* Options d'événement débloquées par le savoir */
 .card .choices button.lore { color: var(--violet); }
