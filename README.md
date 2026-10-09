@@ -37,7 +37,7 @@ Toutes les actions sont dans la barre sous l'écran, chacune avec son raccourci.
 | `Y` | Synthèse (réparer, fabriquer, améliorer) |
 | `N` | Carte de navigation, puis `↑` `↓` et `Entrée` pour sauter |
 | `1`–`9`, `D` | En surface : actions, puis décoller |
-| `V`, `J` | Onglets Vaisseau et Journal |
+| `M`, `J` | Onglets Modules et Journal |
 | `Échap` | Retour |
 | `Espace` | Passer une cinématique |
 
