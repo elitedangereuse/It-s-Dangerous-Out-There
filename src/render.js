@@ -23,6 +23,25 @@ export const LANDING_DURATION = 7.6;
 export const TAKEOFF_DURATION = 2.4;
 export const JUMP_DURATION = 1.8;
 export const ARRIVAL_DURATION = 1.4;
+export const SCOOP_DURATION = 6;
+
+// Déroulé de la cinématique d'écopage, partagé par la scène et son HUD (main.js).
+// on : intensité de l'aspiration ; heat : chaleur 0–1 ; fuel : carburant affiché ; result : bilan 0–1.
+const smooth = (k) => { k = Math.max(0, Math.min(1, k)); return k * k * (3 - 2 * k); };
+const SCOOP_HEAT = { far: 0.38, normal: 0.66, close: 0.9 };
+export function scoopTimeline(fx, st) {
+  const IN = 1.3, OUT = 4.3;
+  const peak = fx.overheat ? 1 : SCOOP_HEAT[fx.approach] ?? 0.6;
+  const on = smooth((st - IN + 0.3) / 0.5) * (1 - smooth((st - OUT) / 0.5));
+  const heat = peak * smooth((st - IN) / (OUT - IN - 0.6)) * (1 - 0.7 * smooth((st - OUT) / 1.2));
+  const fuel = fx.fuel0 + (fx.fuel1 - fx.fuel0) * smooth((st - IN) / (OUT - IN - 0.3));
+  return {
+    IN, OUT, on, heat, fuel,
+    alarm: fx.overheat && st > 3.0 && st < OUT + 0.3,
+    hud: smooth((st - 0.4) / 0.4),
+    result: smooth((st - OUT - 0.55) / 0.3),
+  };
+}
 
 // Dimensions du vaisseau et du commandant (fournies par sprites.js, valeurs de secours sinon).
 const SHIP_W = S.SHIP_W ?? 52;
@@ -635,16 +654,6 @@ export function createRenderer(canvas) {
         ctx.globalAlpha = 1;
       }
     }
-    // Écopage : traînée de plasma vers le vaisseau
-    if (view.scoopUntil && view.scoopUntil > t) {
-      for (let i = 0; i < 60; i++) {
-        ctx.fillStyle = Math.random() > 0.5 ? star.color : star.glow;
-        ctx.globalAlpha = 0.5 + Math.random() * 0.5;
-        const sz = Math.random() < 0.2 ? 1 : PX;
-        ctx.fillRect(snap(shipX - Math.random() * 24), snap(shipY + 2 + Math.random() * 6), sz, sz);
-      }
-      ctx.globalAlpha = 1;
-    }
     if (arr < 1) {
       // Sillage de sortie d'hyperespace derrière le vaisseau.
       for (let i = 0; i < 16; i++) {
@@ -1061,6 +1070,172 @@ export function createRenderer(canvas) {
     surfaceParticles(P, t, cam);
   }
 
+  // ---------- Écopage ----------
+
+  // Plongée vers la couronne : le vaisseau arrive, se cale au-dessus de l'étoile qui occupe tout
+  // le bas de l'écran, aspire des filaments de plasma, puis repart. L'approche choisie fixe
+  // l'altitude, la densité du plasma et la chaleur ; une surchauffe déclenche alarme et étincelles.
+  // view.scoopFx : { approach, star, fuel0, fuel1, fuelMax, gained, overheat, dmg, module }.
+  const SCOOP_ALT = { far: 46, normal: 70, close: 96 };
+  const SCOOP_FLOW = { far: 70, normal: 120, close: 190 };
+
+  function scoopScene(view, t) {
+    const fx = view.scoopFx || { approach: 'normal', star: currentStar, fuel0: 10, fuel1: 18, fuelMax: 24, gained: 8, overheat: false };
+    const st = view.sceneTime;
+    const s = STAR_CLASSES[fx.star] || STAR_CLASSES.G;
+    const alt = SCOOP_ALT[fx.approach] ?? SCOOP_ALT.normal;
+    const flow = SCOOP_FLOW[fx.approach] ?? 120;
+    const { IN, OUT, on, heat, alarm } = scoopTimeline(fx, st);
+
+    // Caméra : l'étoile monte du bas pendant la plongée, l'écran tremble avec la chaleur.
+    const dive = 1 - smooth(st / IN);
+    const shake = on * (0.25 + heat * 1.6) + (alarm ? 1.4 : 0);
+    const sx = snap((hash2(Math.floor(t * 30), 1, 9) - 0.5) * shake);
+    const sy = snap((hash2(Math.floor(t * 30), 2, 9) - 0.5) * shake);
+    ctx.save();
+    ctx.translate(sx, sy);
+    drawSpace(systemSpace(currentSystem), t, { camX: st * 30, camY: -dive * 30, rocks: false, deco: false });
+
+    const R = 190;
+    const cx = 120, cy = 330 + Math.round(dive * 60);
+    const surfY = (x) => cy - Math.sqrt(Math.max(0, R * R - (x - cx) * (x - cx)));
+    halo(ctx, cx, cy, R * 0.92, R + 58, s.glow, 0.5);
+    halo(ctx, cx, cy, R, R + 18, s.color, 0.45);
+    const spr = ppSprite(`star:${fx.star}:scoop`, specOf(`s:${fx.star}`, () => specForStar(fx.star)), R * 2 + 1, t, 8);
+    if (spr) blitSpr(spr, cx - R - spr.off, cy - R - spr.off);
+    else disc(ctx, cx, cy, R, s.color);
+
+    // Protubérances : arches de plasma qui naissent et retombent sur le limbe.
+    for (let j = 0; j < 4; j++) {
+      const life = (t * 0.22 + j * 0.27) % 1;
+      const a0 = cx - 150 + j * 78 + Math.sin(j * 7.1) * 16;
+      const span = 22 + j * 6;
+      const h = Math.sin(life * Math.PI) * (16 + j * 5);
+      for (let i = 0; i <= 40; i++) {
+        const k = i / 40;
+        const x = a0 + span * k;
+        const y = Math.min(surfY(a0), surfY(a0 + span)) + 2 - Math.sin(k * Math.PI) * h;
+        ctx.globalAlpha = Math.sin(life * Math.PI) * (0.5 + 0.5 * hash2(i, j, Math.floor(t * 12)));
+        ctx.fillStyle = i % 5 === 0 ? '#ffffff' : s.color;
+        ctx.fillRect(snap(x), snap(y), PX * 2, PX * 2);
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // Vaisseau : arrivée par la gauche, stationnaire, puis départ en accélérant.
+    const hoverX = cx - SHIP_W / 2 + 6;
+    let shipX, shipY;
+    if (st < IN) {
+      const e = 1 - Math.pow(1 - st / IN, 3);
+      shipX = -SHIP_W - 20 + (hoverX + SHIP_W + 20) * e;
+      shipY = alt - 50 + 50 * e;
+    } else if (st < OUT) {
+      shipX = hoverX + Math.sin(t * 2.1) * 2;
+      shipY = alt + Math.sin(t * 1.7) * 1.5;
+    } else {
+      const k = st - OUT;
+      shipX = hoverX + k * k * 420;
+      shipY = alt - k * k * 40;
+    }
+    const nose = { x: shipX + SHIP_W * 0.78, y: shipY + SHIP_H - 2 };
+
+    // Filaments de plasma : chaque grain part de la couronne et s'enroule jusqu'à l'écope.
+    if (on > 0.01) {
+      // Colonne de plasma : un faisceau qui s'évase de l'écope jusqu'à la couronne.
+      const base = surfY(nose.x) + 4;
+      for (let y = nose.y; y < base; y += PX) {
+        const k = (y - nose.y) / (base - nose.y);
+        const cxb = nose.x - k * 8 + Math.sin(t * 7 + k * 9) * 1.5 * k;
+        const w = 2 + k * 30;
+        const flick = 0.75 + 0.25 * Math.sin(t * 23 + y * 3.1);
+        ctx.globalAlpha = on * 0.3 * flick;
+        ctx.fillStyle = s.glow;
+        ctx.fillRect(snap(cxb - w / 2), snap(y), snap(w), PX);
+        ctx.globalAlpha = on * 0.7 * flick * (1 - k * 0.6);
+        ctx.fillStyle = k < 0.4 ? '#ffffff' : s.color;
+        ctx.fillRect(snap(cxb - w * 0.12), snap(y), Math.max(PX, snap(w * 0.24)), PX);
+      }
+      ctx.globalAlpha = 1;
+      const n = Math.round(flow * 1.6 * on);
+      for (let i = 0; i < n; i++) {
+        const h1 = hash2(i, 3, 17), h2 = hash2(i, 5, 17), h3 = hash2(i, 7, 17);
+        const p = (t * (0.45 + h2 * 0.5) + h1) % 1;
+        const x0 = nose.x + (h3 - 0.5) * (h2 > 0.4 ? 70 : 160);
+        const y0 = surfY(x0) + 2;
+        const swirl = (h1 - 0.5) * 50;
+        // Le plasma s'élève d'abord presque à la verticale, puis s'enroule vers l'écope.
+        const mx = x0 * 0.75 + nose.x * 0.25 + swirl * 0.4, my = nose.y + (y0 - nose.y) * 0.35;
+        for (let tr = 0; tr < 4; tr++) {
+          const q = Math.max(0, p - tr * 0.02);
+          const u = 1 - q;
+          const x = u * u * x0 + 2 * u * q * mx + q * q * nose.x + Math.sin(q * 12 + i) * (1 - q) * 3;
+          const y = u * u * y0 + 2 * u * q * my + q * q * nose.y;
+          ctx.globalAlpha = on * (tr === 0 ? 1 : 0.7 - tr * 0.15) * Math.min(1, q * 6);
+          ctx.fillStyle = q > 0.8 ? '#ffffff' : q > 0.4 ? s.color : s.glow;
+          const sz = tr === 0 ? (h2 > 0.5 ? PX * 3 : PX * 2) : PX * 2;
+          ctx.fillRect(snap(x), snap(y), sz, sz);
+        }
+      }
+      ctx.globalAlpha = 1;
+      // L'écope rougeoie en avalant le plasma.
+      halo(ctx, nose.x, nose.y, 1, 14 + 4 * Math.sin(t * 18), s.color, 0.6 * on);
+      halo(ctx, nose.x, nose.y, 0, 5, '#ffffff', 0.9 * on);
+    }
+
+    drawShip(shipX, shipY, t, { thrust: st < IN || st > OUT ? 1 : 0.4 });
+    // Coque chauffée au rouge par en dessous.
+    if (heat > 0.3) {
+      ctx.globalAlpha = (heat - 0.3) * 0.6 * (0.8 + 0.2 * Math.sin(t * 20));
+      ctx.fillStyle = '#ff6a2a';
+      ctx.fillRect(snap(shipX + 6), snap(shipY + SHIP_H - 3), SHIP_W - 14, 2);
+      ctx.globalAlpha = 1;
+    }
+    // Surchauffe : gerbes d'étincelles et éclats de coque.
+    if (alarm) {
+      for (let i = 0; i < 26; i++) {
+        const life = (t * 1.8 + hash2(i, 1, 33)) % 1;
+        const ox = shipX + 10 + hash2(i, 2, 33) * (SHIP_W - 16);
+        const oy = shipY + SHIP_H * 0.5;
+        const vx = (hash2(i, 3, 33) - 0.6) * 60, vy = -20 - hash2(i, 4, 33) * 30;
+        ctx.globalAlpha = 1 - life;
+        ctx.fillStyle = life < 0.3 ? '#ffffff' : life < 0.6 ? '#ffd27a' : '#ff6a2a';
+        ctx.fillRect(snap(ox + vx * life), snap(oy + vy * life + 60 * life * life), PX * 2, PX * 2);
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+
+    // Voile de chaleur : bords de l'écran orangés, rouges en surchauffe, en anneaux tramés.
+    if (heat > 0.05) {
+      const col = alarm ? '#ff2a2a' : heat > 0.7 ? '#ff5a2a' : '#ff9a3a';
+      const pulse = alarm ? 0.65 + 0.35 * Math.sin(t * 14) : 0.85 + 0.15 * Math.sin(t * 5);
+      ctx.fillStyle = col;
+      for (let i = 0; i < 10; i++) {
+        ctx.globalAlpha = heat * pulse * 0.055 * (10 - i) * (10 - i) / 10;
+        const m = i * 3;
+        ctx.fillRect(m, m, W - 2 * m, 3);
+        ctx.fillRect(m, H - m - 3, W - 2 * m, 3);
+        ctx.fillRect(m, m + 3, 3, H - 2 * m - 6);
+        ctx.fillRect(W - m - 3, m + 3, 3, H - 2 * m - 6);
+      }
+      ctx.globalAlpha = 1;
+    }
+    // Éclair d'entrée dans la couronne.
+    if (st > IN - 0.2 && st < IN + 0.25) {
+      ctx.globalAlpha = (1 - Math.abs(st - IN) / 0.25) * 0.35;
+      ctx.fillStyle = s.color;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+    if (fx.overheat && st > 3.0 && st < 3.2) {
+      ctx.globalAlpha = (3.2 - st) / 0.2 * 0.6;
+      ctx.fillStyle = '#ff4a3a';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+
+  }
+
   // ---------- Titre et fin ----------
 
   // Écran titre : une nébuleuse violette, une géante gazeuse annelée, le Mandalay passe.
@@ -1110,6 +1285,7 @@ export function createRenderer(canvas) {
         case 'landing': landingScene(view, t); break;
         case 'surface': surfaceScene(view, t); break;
         case 'takeoff': takeoffScene(view, t); break;
+        case 'scoop': scoopScene(view, t); break;
         case 'end': endScene(view, t); break;
         case 'title': titleScene(view, t); break;
         case 'event': eventScenes.draw(view, t); break;
