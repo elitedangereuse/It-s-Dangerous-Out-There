@@ -135,6 +135,18 @@ const phoneUI = matchMedia('(orientation: landscape) and (max-height: 540px)');
 phoneUI.addEventListener('change', () => view && update());
 document.addEventListener('fullscreenchange', () => view && update());
 
+// Hauteur réellement visible, recalculée à chaque changement (barre d'adresse, plein écran,
+// rotation) : plus fiable que 100dvh sur certains navigateurs Android.
+function fitAppHeight() {
+  const vv = window.visualViewport;
+  const h = vv ? vv.height * vv.scale : window.innerHeight;
+  document.documentElement.style.setProperty('--app-h', `${Math.round(Math.min(h, window.innerHeight))}px`);
+}
+fitAppHeight();
+window.addEventListener('resize', fitAppHeight);
+window.visualViewport?.addEventListener('resize', fitAppHeight);
+document.addEventListener('fullscreenchange', fitAppHeight);
+
 function placeTip() {
   const tip = $('#tip');
   const id = view.hoverBody || (touchUI.matches ? view.selectedBodyId : null);
