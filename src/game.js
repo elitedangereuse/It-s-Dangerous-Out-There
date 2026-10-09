@@ -515,9 +515,12 @@ export function scoop(state, approach = 'normal') {
   const rng = actionRng(state, 'scoop');
   const s = state.ship;
   const amount = Math.round(rng.range(6, 12) * (s.modules.scoop / 100) * (star.heat > 0.1 ? 1.3 : 1) * a.mult * 10) / 10;
+  const before = s.fuel;
   s.fuel = clamp(Math.round((s.fuel + amount) * 10) / 10, 0, s.fuelMax);
   sys.scooped = true;
-  let msg = `Écopage (approche ${a.name.toLowerCase()}) : +${amount} t de carburant.`;
+  // Le journal annonce ce qui entre vraiment dans le réservoir.
+  const gained = Math.round((s.fuel - before) * 10) / 10;
+  let msg = `Écopage (approche ${a.name.toLowerCase()}) : +${gained} t de carburant${s.fuel >= s.fuelMax ? ', réservoir plein' : ''}.`;
   if (rng.chance(risk)) {
     const dmg = rng.int(...a.dmg);
     s.hull = clamp(s.hull - dmg, 0, s.hullMax);

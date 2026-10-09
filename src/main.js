@@ -4,7 +4,7 @@
 import * as G from './game.js';
 import { STAR_CLASSES, BODY_TYPES, MATERIALS, MODULES, RECIPES, REGION_TYPES, SCOOP_APPROACHES, SHIPS, PASSENGERS, CODEX, KNOWLEDGE } from './data.js';
 import { loadProfile, saveProfile, absorbRun, gameOptions, isUnlocked } from './profile.js';
-import { createRenderer, bodyAtmosphere, W, H, LANDING_DURATION, TAKEOFF_DURATION, JUMP_DURATION } from './render.js';
+import { createRenderer, bodyAtmosphere, W, H, LANDING_DURATION, TAKEOFF_DURATION, JUMP_DURATION, SCOOP_DURATION, scoopTimeline } from './render.js';
 import { shipThumb } from './sprites.js';
 import { dist } from './galaxy.js';
 import { EVENT_INTRO } from './eventscenes.js';
@@ -23,7 +23,7 @@ let profileSaved = '';
 
 function newGame(seed, { intro = true } = {}) {
   state = G.createGame(seed, gameOptions(profile, shipChoice));
-  for (const l of state.log) l.toasted = true;
+  for (const l of state.log) l.at = 0;
   view = {
     scene: 'system',
     sceneStart: performance.now(),
@@ -38,7 +38,6 @@ function newGame(seed, { intro = true } = {}) {
     prev: {},
     unlocked: [],
   };
-  $('#toasts').innerHTML = '';
   if (intro) setScene('jump', { jumpStar: state.system.star });
   else update();
 }
@@ -57,7 +56,7 @@ function setScene(scene, extra = {}) {
 }
 
 // L'introduction d'un événement est une cinématique ; ensuite la scène reste en fond de la carte.
-const isCinematic = () => ['jump', 'landing', 'takeoff'].includes(view.scene) || (view.scene === 'event' && !view.eventReady);
+const isCinematic = () => ['jump', 'landing', 'takeoff', 'scoop'].includes(view.scene) || (view.scene === 'event' && !view.eventReady);
 
 function finishCinematic() {
   if (view.scene === 'jump') {
@@ -65,7 +64,7 @@ function finishCinematic() {
     else setScene('system', { selectedBodyId: null, scanWaveStart: null, arriving: true });
   } else if (view.scene === 'landing') {
     setScene(state.phase === 'gameover' ? 'end' : 'surface', { astroX: null });
-  } else if (view.scene === 'takeoff') {
+  } else if (view.scene === 'takeoff' || view.scene === 'scoop') {
     setScene(state.phase === 'gameover' ? 'end' : 'system', { arriving: false });
   } else if (view.scene === 'event') {
     Object.assign(view, { eventReady: true, eventReadyAt: view.sceneTime });
@@ -87,8 +86,9 @@ function frame(now) {
   view.dialogBottom = !phoneLandscape.matches;
   if (view.scene === 'surface' || view.scene === 'landing' || view.scene === 'takeoff' || (view.scene === 'event' && state.surface)) view.body = G.currentBody(state) || view.body;
   renderer.render(view, t);
+  if (view.scene === 'scoop') tickScoopHud();
   if (view.hoverBody || (touchUI.matches && view.selectedBodyId)) placeTip();
-  const dur = { jump: JUMP_DURATION, landing: LANDING_DURATION, takeoff: TAKEOFF_DURATION, event: view.eventReady ? 0 : EVENT_INTRO }[view.scene];
+  const dur = { jump: JUMP_DURATION, landing: LANDING_DURATION, takeoff: TAKEOFF_DURATION, scoop: SCOOP_DURATION, event: view.eventReady ? 0 : EVENT_INTRO }[view.scene];
   if (dur && view.sceneTime >= dur) finishCinematic();
   requestAnimationFrame(frame);
 }
@@ -273,7 +273,7 @@ function gauge(cls, label, v, max, unit = '') {
   let delta = '';
   if (prev != null && Math.abs(prev - v) >= 0.1) {
     const d = round1(v - prev);
-    delta = ` <span class="delta ${d < 0 ? 'neg' : ''}" style="animation: toast-out 0.6s ease-in 1.6s forwards">${d > 0 ? '+' : ''}${d}</span>`;
+    delta = ` <span class="delta ${d < 0 ? 'neg' : ''}" style="animation: fade-out 0.6s ease-in 1.6s forwards">${d > 0 ? '+' : ''}${d}</span>`;
   }
   view.prev[cls] = v;
   return `<div class="gauge ${cls} ${low ? 'low' : ''}" title="${label} : ${round1(v)}${unit} / ${max}${unit}">
@@ -298,18 +298,33 @@ function renderTop() {
   if (!fs.innerHTML) fs.innerHTML = icon('full');
 }
 
-function pushToasts() {
-  const list = $('#toasts');
-  const fresh = state.log.filter((l) => !l.toasted);
-  for (const l of fresh) {
-    l.toasted = true;
-    const li = document.createElement('li');
-    li.className = l.kind;
-    li.innerHTML = `<span>${decorate(esc(l.text))}</span>`;
-    list.appendChild(li);
-    setTimeout(() => li.remove(), 6200);
+// Journal vivant : chaque nouvelle ligne s'illumine quelques secondes quand le journal l'affiche ;
+// tant qu'il n'est pas à l'écran, l'onglet Journal compte les lignes non lues.
+const LOG_GLOW_MS = 4000;
+
+function stampLog() {
+  // Le bilan de l'écopage attend la fin de sa cinématique.
+  if (view.scene === 'scoop') return;
+  const now = performance.now();
+  for (const l of state.log) {
+    if (l.at != null) continue;
+    l.at = now;
+    l.unread = true;
   }
-  while (list.children.length > 4) list.firstChild.remove();
+}
+
+function renderLogTab(journalShown) {
+  if (journalShown) for (const l of state.log) l.unread = false;
+  const unread = state.log.filter((l) => l.unread);
+  const tab = $('.tabs [data-tab="log"]');
+  if (!tab) return;
+  const key = unread.length ? `${unread.length}|${unread.some((l) => l.kind === 'bad')}` : '';
+  if (tab.dataset.unread === key && tab.innerHTML) return;
+  tab.dataset.unread = key;
+  const badge = unread.length
+    ? `<span class="badge ${unread.some((l) => l.kind === 'bad') ? 'bad' : ''}" title="${unread.length} nouvelle(s) entrée(s)">${unread.length > 9 ? '9+' : unread.length}</span>`
+    : '';
+  tab.innerHTML = `Journal${badge}${kbd('J')}`;
 }
 
 // --- Panneau : système ---
@@ -696,10 +711,18 @@ function modulesPanel() {
 }
 
 function logPanel(title = 'Journal de bord') {
+  // Le journal est à l'écran : les lignes non lues s'illuminent maintenant, pas à leur arrivée.
+  const now = performance.now();
+  for (const l of state.log) if (l.unread) Object.assign(l, { unread: false, at: now });
   return `<h2>${title}</h2><ol class="log">${state.log
-    .slice()
+    .filter((l) => l.at != null)
     .reverse()
-    .map((l) => `<li class="${l.kind}"><span class="j">S${l.jump}</span>${decorate(esc(l.text))}</li>`)
+    .map((l) => {
+      // Délai négatif : l'illumination reprend où elle en était quand le panneau est redessiné.
+      const age = performance.now() - l.at;
+      const glow = l.at && age < LOG_GLOW_MS ? ` fresh" style="animation-delay:-${Math.round(age)}ms` : '';
+      return `<li class="${l.kind}${glow}"><span class="j">S${l.jump}</span>${decorate(esc(l.text))}</li>`;
+    })
     .join('')}</ol>`;
 }
 
@@ -867,6 +890,44 @@ function scoopCard() {
     <div class="choices">${rows}<button data-act="scoopCancel">Renoncer${kbd('Échap')}</button></div></div>`;
 }
 
+// HUD de la cinématique d'écopage : titre, jauges qui bougent, alarme et bilan.
+// Le gabarit est posé une fois (update), tickScoopHud l'anime à chaque image.
+function scoopHud() {
+  const fx = view.scoopFx;
+  const star = STAR_CLASSES[fx.star];
+  const A = SCOOP_APPROACHES[fx.approach];
+  return `<div class="scoop-hud${fx.overheat ? ' overheat' : ''}">
+    <div class="sh-title"><span class="eyebrow">${icon('fuel')}Écopage</span><b>${esc(star.name)}</b><span>Approche ${esc(A.name.toLowerCase())}</span></div>
+    <div class="sh-gauges">
+      <div class="gauge fuel">${icon('fuel')}<div class="lbl"><span>Carburant</span><span data-sh="fuel"></span></div><div class="track"><b style="width:calc(${pct(fx.fuel0, fx.fuelMax)}% - 4px)"></b><i data-sh="fuelbar"></i></div></div>
+      <div class="gauge heat">${icon('alert')}<div class="lbl"><span>Chaleur</span><span data-sh="heat"></span></div><div class="track"><i data-sh="heatbar"></i></div></div>
+    </div>
+    <p class="sh-alarm" hidden>${icon('alert')}Surchauffe${icon('alert')}</p>
+    <div class="sh-result" hidden>
+      <b>+${fx.gained.toFixed(1)} t</b>
+      <span>Réservoir ${round1(fx.fuel1)} / ${fx.fuelMax} t${fx.fuel1 >= fx.fuelMax ? ' · plein' : ''}</span>
+      ${fx.overheat ? `<span class="bad">Coque −${fx.dmg}${fx.module ? ` · ${esc(fx.module)} endommagé` : ''}</span>` : ''}
+    </div>
+  </div>`;
+}
+
+function tickScoopHud() {
+  const hud = document.querySelector('.scoop-hud');
+  if (!hud) return;
+  const fx = view.scoopFx;
+  const k = scoopTimeline(fx, view.sceneTime);
+  const q = (n) => hud.querySelector(`[data-sh="${n}"]`);
+  hud.style.opacity = k.hud;
+  q('fuel').textContent = `+${Math.max(0, k.fuel - fx.fuel0).toFixed(1)} t`;
+  q('fuelbar').style.width = `calc(${pct(k.fuel, fx.fuelMax)}% - 4px)`;
+  q('heat').textContent = `${Math.round(k.heat * 100)} %`;
+  q('heatbar').style.width = `calc(${Math.min(100, k.heat * 100)}% - 4px)`;
+  hud.classList.toggle('hot', k.heat > 0.7);
+  hud.querySelector('.sh-alarm').hidden = !k.alarm;
+  hud.querySelector('.sh-result').hidden = k.result <= 0;
+  hud.classList.toggle('done', k.result > 0);
+}
+
 function endCard() {
   const v = state.phase === 'victory';
   const st = state.stats;
@@ -978,7 +1039,7 @@ function update() {
   if ((state.phase === 'victory' || state.phase === 'gameover') && !isCinematic()) view.scene = 'end';
   if (view.mode === 'nav' && state.phase !== 'system') view.mode = 'system';
   if (view.scene !== 'title') {
-    pushToasts();
+    stampLog();
     view.unlocked.push(...absorbRun(profile, state));
     const json = JSON.stringify(profile);
     if (json !== profileSaved) {
@@ -1008,6 +1069,11 @@ function update() {
     overlay.hidden = false;
     overlay.className = 'overlay cine';
     overlay.innerHTML = `<p class="cine-title">${icon('alert')}${state.event ? esc(G.eventTitle(state, state.event.def)) : ''}</p>`;
+  } else if (view.scene === 'scoop' && view.scoopFx) {
+    overlay.hidden = false;
+    overlay.className = 'overlay cine scoop';
+    overlay.innerHTML = scoopHud();
+    tickScoopHud();
   } else if (view.scoopPick) {
     overlay.hidden = false;
     overlay.innerHTML = scoopCard();
@@ -1034,7 +1100,7 @@ function update() {
     </div>
     <div class="row"><span>Distance</span><span class="tag">${Math.round(state.galaxy.destination.dist)} al</span></div>
     <h3>Soute</h3>${matsGrid()}`;
-  else if (isCinematic()) panel.innerHTML = `<h2>${{ jump: 'Saut hyperspatial', landing: 'Approche planétaire', takeoff: 'Décollage', event: 'Événement' }[view.scene]}</h2><p class="muted">${{ jump: 'Le FSD charge… l\'hyperespace s\'ouvre.', landing: 'Mise en orbite, descente, atterrissage.', takeoff: 'Retour en orbite.', event: state.event ? esc(G.eventText(state, state.event.def)) : '' }[view.scene]}</p>`;
+  else if (isCinematic()) panel.innerHTML = `<h2>${{ jump: 'Saut hyperspatial', landing: 'Approche planétaire', takeoff: 'Décollage', scoop: 'Écopage', event: 'Événement' }[view.scene]}</h2><p class="muted">${{ jump: 'Le FSD charge… l\'hyperespace s\'ouvre.', landing: 'Mise en orbite, descente, atterrissage.', takeoff: 'Retour en orbite.', scoop: 'Plongée dans la couronne, l\'écope aspire le plasma.', event: state.event ? esc(G.eventText(state, state.event.def)) : '' }[view.scene]}</p>`;
   else if (view.mode === 'synth') panel.innerHTML = synthPanel();
   else if (view.mode === 'nav') panel.innerHTML = navPanel();
   else if (state.phase === 'surface' || view.scene === 'surface') panel.innerHTML = surfacePanel();
@@ -1052,6 +1118,7 @@ function update() {
   }
 
   renderDocks();
+  renderLogTab(view.tab === 'log' || view.scene === 'end' || !$('#journal').hidden);
   if (showNav) drawNavmap();
 }
 
@@ -1132,9 +1199,7 @@ function act(name) {
       return newGame(Math.floor(Math.random() * 1e9));
     }
     case 'retry': return newGame(state.seed);
-    case 'menu':
-      $('#toasts').innerHTML = '';
-      return showTitle();
+    case 'menu': return showTitle();
   }
   if (state.phase === 'gameover') return setScene('end');
   update();
@@ -1168,9 +1233,23 @@ document.addEventListener('click', (e) => {
   }
   if (d.scoop) {
     view.scoopPick = false;
-    if (G.scoop(state, d.scoop)) view.scoopUntil = performance.now() / 1000 + 1.5;
-    if (state.phase === 'gameover') return setScene('end');
-    return update();
+    const s = state.ship;
+    const before = { fuel: s.fuel, hull: s.hull, modules: { ...s.modules } };
+    if (!G.scoop(state, d.scoop)) return update();
+    const hurt = Object.keys(s.modules).find((k) => s.modules[k] < before.modules[k]);
+    return setScene('scoop', {
+      scoopFx: {
+        approach: d.scoop,
+        star: state.system.star,
+        fuel0: before.fuel,
+        fuel1: s.fuel,
+        fuelMax: s.fuelMax,
+        gained: Math.round((s.fuel - before.fuel) * 10) / 10,
+        overheat: s.hull < before.hull,
+        dmg: Math.round(before.hull - s.hull),
+        module: hurt ? MODULES[hurt].name : null,
+      },
+    });
   }
   if (d.ship) {
     shipChoice = d.ship;
