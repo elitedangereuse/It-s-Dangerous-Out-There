@@ -772,7 +772,10 @@ function renderDocks() {
   const shown = acts.filter((a) => !a.sep);
   left.innerHTML = column(shown.filter(isLeft));
   $('#dock').innerHTML = column(shown.filter((a) => !isLeft(a)));
+  // Le journal est redessiné à chaque mise à jour : on garde l'endroit où le joueur lisait.
+  const scroll = journal.scrollTop;
   journal.innerHTML = logPanel('Journal');
+  journal.scrollTop = scroll;
 }
 
 // Libellés courts des actions de surface pour la barre d'actions du téléphone.
