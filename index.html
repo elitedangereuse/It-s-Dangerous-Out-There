@@ -2,35 +2,68 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>It's Dangerous Out There</title>
+  <meta name="theme-color" content="#080a2a">
+  <!-- Sur téléphone et tablette, le jeu se joue en paysage uniquement (voir .rotate et le manifeste). -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="description" content="Roguelite d'exploration spatiale en pixel art dans l'univers d'Elite Dangerous.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&family=VT323&display=swap" rel="stylesheet">
+  <!-- Chiffres seuls (sous-ensemble) : dans Pixelify Sans, le 5 se lit S et le 3 se lit 8. -->
+  <link href="https://fonts.googleapis.com/css2?family=DotGothic16&text=0123456789&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <header class="topbar">
-    <h1>It's Dangerous Out There</h1>
-    <div id="route" class="route"></div>
+    <h1 class="logo"><svg class="mark" viewBox="0 0 13 13" aria-hidden="true" shape-rendering="crispEdges">
+      <path fill="#ff9a5c" d="M4 2h5v1h1v1h1v5h-1v1h-1v1H4v-1H3V9H2V4h1V3h1z"/>
+      <path fill="#ffd18a" d="M4 3h3v1H5v1H4v2H3V4h1z"/>
+      <path fill="#c9567a" d="M8 8h2v1H9v1H7V9h1z"/>
+      <path fill="#a993ff" d="M0 8h2v1h2v1h3v1H3v-1H1V9H0zM11 4h2v1h-1v1h-1z"/>
+    </svg>It's Dangerous<span> Out There</span></h1>
+    <div id="route" class="route" aria-label="Progression du voyage"></div>
+    <div id="gauges" class="gauges" aria-label="État du vaisseau"></div>
+    <button id="fs" class="fs" data-act="fullscreen" hidden aria-label="Plein écran" title="Plein écran"></button>
   </header>
 
   <main class="layout">
-    <section class="viewport-wrap">
-      <canvas id="screen" width="320" height="180" aria-label="Vue du vaisseau"></canvas>
-      <div id="overlay" class="overlay" hidden></div>
+    <section class="stage-col">
+      <div class="stage-wrap">
+      <div class="stage" id="stage">
+        <canvas id="screen" width="640" height="360" aria-label="Vue du vaisseau"></canvas>
+        <canvas id="navmap" class="navmap" width="640" height="360" hidden aria-label="Carte de navigation"></canvas>
+        <div id="tip" class="tip" hidden></div>
+        <div id="overlay" class="overlay" hidden></div>
+      </div>
+      </div>
+      <nav id="dock" class="dock" aria-label="Actions"></nav>
+      <!-- Téléphone en paysage : actions du pouce gauche et journal dans la colonne de gauche. -->
+      <nav id="dock-left" class="dock dock-left" aria-label="Actions secondaires" hidden></nav>
+      <section id="journal" class="panel journal" aria-label="Journal de bord" hidden></section>
     </section>
 
-    <aside id="hud" class="hud panel"></aside>
-
-    <section id="panel" class="context panel"></section>
-
-    <section class="logwrap panel">
-      <h2>Journal de bord</h2>
-      <ol id="log" class="log"></ol>
-    </section>
+    <aside class="side">
+      <div class="tabs" role="tablist">
+        <button role="tab" data-tab="ctx" id="tab-ctx"></button>
+        <button role="tab" data-tab="modules">Modules<kbd>M</kbd></button>
+        <button role="tab" data-tab="log">Journal<kbd>J</kbd></button>
+      </div>
+      <section id="panel" class="panel" role="tabpanel"></section>
+    </aside>
   </main>
+
+  <div class="rotate" role="alert">
+    <svg class="phone" viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges">
+      <path fill="#a993ff" d="M5 1h6v1h1v12h-1v1H5v-1H4V2h1zM5 3v9h6V3z"/>
+      <path fill="#ffb054" d="M7 13h2v1H7z"/>
+    </svg>
+    <p><b>Tournez votre appareil</b><br>It's Dangerous Out There se joue à l'horizontale.</p>
+  </div>
 
   <noscript>Ce jeu nécessite JavaScript.</noscript>
   <script type="module" src="src/main.js"></script>

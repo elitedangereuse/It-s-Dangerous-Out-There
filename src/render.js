@@ -1,14 +1,57 @@
-// Rendu pixel art sur canvas 320×180 : système, saut, cinématique d'atterrissage, surface.
+// Rendu pixel art dans un repère logique 320×180 : titre, système, saut, atterrissage, surface, fin.
+// L'image est calculée à K× (640×360) : décors, planètes et sprites ont un pixel deux fois plus
+// fin, puis elle est agrandie à la taille de l'écran (pixels entiers, puis lissage léger).
+// Les décors viennent de scenery.js (nébuleuses, panoramas) ; planètes, étoiles et astéroïdes
+// sont animés par le portage WebGL de Pixel Planets (pixelplanets.js).
 import { STAR_CLASSES, BODY_TYPES } from './data.js';
-import { SHIP, SHIP_GEAR, SHIP_PALETTE, ASTRO_FRAMES, ASTRO_PALETTE, drawSprite, drawText } from './sprites.js';
+import * as S from './sprites.js';
 import { Rng, hashMix } from './rng.js';
+import {
+  NW, NH, THEMES, spaceRecipe, buildNebula, sparkles, themeColors, panoramaRecipe, buildPanorama,
+  panoramaIdFor, spaceIdFor, drawLayers, cached, rngOf, hexRgb, mix, css, K,
+} from './scenery.js';
+import { createEventScenes } from './eventscenes.js';
+import { createPixelPlanets, makeSpec, specForBody, specForStar, specForDestination } from './pixelplanets.js';
 
 export const W = 320;
 export const H = 180;
+// Un pixel fin (réel) dans le repère logique.
+const PX = 1 / K;
+const snap = (v) => Math.round(v * K) / K;
 
 export const LANDING_DURATION = 7.6;
 export const TAKEOFF_DURATION = 2.4;
 export const JUMP_DURATION = 1.8;
+export const ARRIVAL_DURATION = 1.4;
+export const SCOOP_DURATION = 6;
+
+// Déroulé de la cinématique d'écopage, partagé par la scène et son HUD (main.js).
+// on : intensité de l'aspiration ; heat : chaleur 0–1 ; fuel : carburant affiché ; result : bilan 0–1.
+const smooth = (k) => { k = Math.max(0, Math.min(1, k)); return k * k * (3 - 2 * k); };
+const SCOOP_HEAT = { far: 0.38, normal: 0.66, close: 0.9 };
+export function scoopTimeline(fx, st) {
+  const IN = 1.3, OUT = 4.3;
+  const peak = fx.overheat ? 1 : SCOOP_HEAT[fx.approach] ?? 0.6;
+  const on = smooth((st - IN + 0.3) / 0.5) * (1 - smooth((st - OUT) / 0.5));
+  const heat = peak * smooth((st - IN) / (OUT - IN - 0.6)) * (1 - 0.7 * smooth((st - OUT) / 1.2));
+  const fuel = fx.fuel0 + (fx.fuel1 - fx.fuel0) * smooth((st - IN) / (OUT - IN - 0.3));
+  return {
+    IN, OUT, on, heat, fuel,
+    alarm: fx.overheat && st > 3.0 && st < OUT + 0.3,
+    hud: smooth((st - 0.4) / 0.4),
+    result: smooth((st - OUT - 0.55) / 0.3),
+  };
+}
+
+// Dimensions du vaisseau et du commandant (fournies par sprites.js, valeurs de secours sinon).
+const SHIP_W = S.SHIP_W ?? 52;
+const SHIP_H = S.SHIP_H ?? 16;
+const GEAR_H = S.SHIP_GEAR_H ?? 4;
+const SMALL_W = S.SHIP_SMALL_W ?? 26;
+const SMALL_H = S.SHIP_SMALL_H ?? 8;
+const HATCH0 = S.SHIP_HATCH ?? { x: Math.round(SHIP_W * 0.55), y: SHIP_H - 1 };
+const ASTRO_W = S.ASTRO_W ?? 6;
+const ASTRO_H = S.ASTRO_H ?? 9;
 
 const BAYER = [
   [0, 8, 2, 10],
@@ -16,11 +59,6 @@ const BAYER = [
   [3, 11, 1, 9],
   [15, 7, 13, 5],
 ].map((r) => r.map((v) => v / 16 - 0.5));
-
-function hexToRgb(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
 
 function hash2(x, y, seed) {
   let h = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 982451653);
@@ -41,24 +79,113 @@ function fbm(x, y, seed) {
   return valueNoise(x, y, seed) * 0.6 + valueNoise(x * 2.1, y * 2.1, seed + 7) * 0.3 + valueNoise(x * 4.3, y * 4.3, seed + 13) * 0.1;
 }
 
+// Disque plein, tracé au pixel fin.
 function disc(ctx, cx, cy, r, color) {
   ctx.fillStyle = color;
-  for (let dy = -r; dy <= r; dy++) {
-    const w = Math.floor(Math.sqrt(r * r - dy * dy));
-    ctx.fillRect(Math.round(cx - w), Math.round(cy + dy), 2 * w + 1, 1);
+  const R = Math.round(r * K), X = Math.round(cx * K), Y = Math.round(cy * K);
+  for (let dy = -R; dy <= R; dy++) {
+    const w = Math.floor(Math.sqrt(R * R - dy * dy));
+    ctx.fillRect((X - w) / K, (Y + dy) / K, (2 * w + 1) / K, PX);
   }
 }
 
-function ring(ctx, cx, cy, r, color) {
+// Cercle d'un pixel fin (sélection, vague de scan).
+function ring(ctx, cx, cy, r, color, thick = 1) {
   ctx.fillStyle = color;
-  const steps = Math.max(16, Math.floor(r * 6));
+  const R = r * K;
+  const steps = Math.max(24, Math.floor(R * 6));
+  const X = Math.round(cx * K), Y = Math.round(cy * K);
   for (let i = 0; i < steps; i++) {
     const a = (i / steps) * Math.PI * 2;
-    ctx.fillRect(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), 1, 1);
+    ctx.fillRect(Math.round(X + Math.cos(a) * R) / K, Math.round(Y + Math.sin(a) * R) / K, thick / K, thick / K);
   }
 }
 
-// Rend une planète ombrée avec tramage dans un canvas hors-écran (mis en cache).
+const rgbOf = (c) => (typeof c === 'string' && c[0] === '#' ? hexRgb(c) : [255, 255, 255]);
+
+// Halo lumineux : dégradé radial doux, quantifié et finement tramé (pas de bandes visibles).
+const glows = new Map();
+function glowCanvas(r0, r1, color, alpha) {
+  const key = `${r0}|${r1}|${color}|${alpha}`;
+  let c = glows.get(key);
+  if (c) return c;
+  if (glows.size > 60) glows.clear();
+  const R = Math.ceil(r1 * K);
+  const size = R * 2 + 1;
+  c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const img = g.createImageData(size, size);
+  const [cr, cg, cb] = rgbOf(color);
+  const peak = Math.min(1, alpha * 1.15);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const d = Math.hypot(x - R, y - R) / K;
+      if (d > r1) continue;
+      const k = d <= r0 ? 1 : 1 - (d - r0) / (r1 - r0);
+      const a = peak * k * k * (0.6 + 0.4 * k);
+      const q = Math.max(0, Math.round(a * 32 + BAYER[y & 3][x & 3] * 0.9) / 32);
+      if (q <= 0) continue;
+      const o = (y * size + x) * 4;
+      img.data[o] = cr;
+      img.data[o + 1] = cg;
+      img.data[o + 2] = cb;
+      img.data[o + 3] = Math.round(Math.min(1, q) * 255);
+    }
+  }
+  g.putImageData(img, 0, 0);
+  glows.set(key, c);
+  return c;
+}
+
+function halo(ctx, cx, cy, r0, r1, color, alpha = 0.35) {
+  const g = glowCanvas(Math.round(r0 * 2) / 2, Math.round(r1 * 2) / 2, color, alpha);
+  const s = g.width / K;
+  ctx.drawImage(g, snap(cx) - s / 2 + PX / 2, snap(cy) - s / 2 + PX / 2, s, s);
+}
+
+// Texte des repères (numéros des corps…) : la police pixel de l'interface, ombrée.
+function label(ctx, text, x, y, color, size = 7) {
+  ctx.font = `600 ${size}px DotGothic16, "Pixelify Sans", monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = 'rgba(4, 4, 20, 0.75)';
+  ctx.fillText(String(text), x + PX, y + PX);
+  ctx.fillStyle = color;
+  ctx.fillText(String(text), x, y);
+  ctx.textAlign = 'start';
+}
+
+// Numéro d'un corps : plaque sombre cerclée, chiffre clair, bien lisible sur les nébuleuses.
+function bodyTag(ctx, text, x, y, { visible, selected, hover }) {
+  const size = 9;
+  ctx.font = `700 ${size}px DotGothic16, "Pixelify Sans", monospace`;
+  const w = Math.max(9, Math.ceil(ctx.measureText(String(text)).width) + 5);
+  const h = size + 3;
+  const left = snap(x - w / 2);
+  const top = snap(y);
+  const border = selected ? '#ffd27a' : hover ? '#cfe4ff' : visible ? '#7d84f0' : '#4a51ad';
+  ctx.fillStyle = border;
+  ctx.fillRect(left + 1, top, w - 2, h);
+  ctx.fillRect(left, top + 1, w, h - 2);
+  ctx.fillStyle = 'rgba(8, 9, 32, 0.92)';
+  ctx.fillRect(left + 1, top + 1, w - 2, h - 2);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = selected ? '#ffe2a8' : visible ? '#ffffff' : '#aab3e0';
+  ctx.fillText(String(text), left + w / 2, top + h / 2 + 0.5);
+  ctx.textAlign = 'start';
+  ctx.textBaseline = 'top';
+}
+
+// Atmosphère : visuelle uniquement, stable par corps (une partie des corps atterrissables).
+export function bodyAtmosphere(body) {
+  if (!body || !BODY_TYPES[body.type]?.landable) return null;
+  const R = panoramaRecipe(panoramaIdFor(body), body.type);
+  return R.airless ? null : R.mood;
+}
+
+// Rendu de secours d'une planète (sans WebGL) : disque ombré et tramé.
 function renderPlanet(r, body, light = [-0.8, -0.3, 0.55]) {
   const size = r * 2 + 1;
   const off = document.createElement('canvas');
@@ -66,10 +193,9 @@ function renderPlanet(r, body, light = [-0.8, -0.3, 0.55]) {
   off.height = size;
   const octx = off.getContext('2d');
   const img = octx.createImageData(size, size);
-  const def = BODY_TYPES[body.type];
-  const pal = def.palette.map(hexToRgb);
-  const night = [8, 9, 16];
-  const levels = [night, pal[0], pal[1], pal[2]];
+  const def = BODY_TYPES[body.type] || BODY_TYPES.rocky;
+  const pal = def.palette.map(hexRgb);
+  const levels = [[8, 9, 16], pal[0], pal[1], pal[2]];
   const ln = Math.hypot(...light);
   const L = light.map((v) => v / ln);
   const seed = body.seed % 100000;
@@ -80,15 +206,10 @@ function renderPlanet(r, body, light = [-0.8, -0.3, 0.55]) {
       if (d2 > 1) continue;
       const nz = Math.sqrt(1 - d2);
       const shade = Math.max(0, nx * L[0] + ny * L[1] + nz * L[2]);
-      let tex;
-      if (def.banded) tex = 0.5 + 0.5 * Math.sin(ny * 9 + fbm(nx * 2, ny * 6, seed) * 4);
-      else if (body.type === 'elw') tex = fbm(nx * 3 + 5, ny * 3, seed) > 0.52 ? 0.55 : 0.1;
-      else tex = fbm(nx * 3 + 5, ny * 3 + 5, seed);
+      const tex = def.banded ? 0.5 + 0.5 * Math.sin(ny * 9 + fbm(nx * 2, ny * 6, seed) * 4) : fbm(nx * 3 + 5, ny * 3 + 5, seed);
       const v = shade * (0.55 + 0.6 * tex);
-      let idx = Math.floor(v * 3.2 + 0.4 + BAYER[y & 3][x & 3]);
-      idx = Math.max(0, Math.min(3, idx));
-      let c = levels[idx];
-      if (body.type === 'elw' && shade > 0.3 && hash2(x >> 1, y, seed) > 0.93) c = [240, 245, 255];
+      const idx = Math.max(0, Math.min(3, Math.floor(v * 3.2 + 0.4 + BAYER[y & 3][x & 3])));
+      const c = levels[idx];
       const o = (y * size + x) * 4;
       img.data[o] = c[0];
       img.data[o + 1] = c[1];
@@ -100,37 +221,260 @@ function renderPlanet(r, body, light = [-0.8, -0.3, 0.55]) {
   return off;
 }
 
+// Planète décorative posée dans un coin de la nébuleuse (couleurs accordées au thème).
+// Teinte contrastée pour que l'astre se détache de la nébuleuse (planètes orange sur nébuleuse verte…).
+const CONTRAST = { violet: 'braise', emeraude: 'braise', azur: 'magenta', magenta: 'lagon', braise: 'violet', lagon: 'braise' };
+
+function decoSpec(deco, theme) {
+  const tc = themeColors(CONTRAST[theme] || 'braise');
+  const seed = 1 + (deco.seed % 900) / 100;
+  switch (deco.kind) {
+    case 'gas':
+    case 'ringed':
+      return makeSpec('gasLayers', {
+        seed,
+        rotation: -0.3,
+        rings: deco.kind === 'ringed',
+        ringTilt: 0.35,
+        colors: { light: tc.gasLight, dark: tc.gasDark, ringLight: tc.gasLight, ringDark: tc.gasDark },
+      });
+    case 'lava':
+      return makeSpec('lava', { seed, colors: { ground: ['#8f4d57', '#52333f', '#3d2936'], craters: ['#52333f', '#3d2936'], lava: ['#ff8933', '#e64539', '#ad2f45'] } });
+    case 'ice':
+      return specForBody({ type: 'icy', seed: deco.seed });
+    case 'land':
+      return specForBody({ type: 'elw', seed: deco.seed });
+    default:
+      return specForBody({ type: 'rocky', seed: deco.seed });
+  }
+}
+
+// Composition fixe de l'écran titre.
+const TITLE_SPACE = {
+  theme: 'violet', accent: 'azur', focal: [NW * 0.42, NH * 0.42], angle: -0.35, length: 200, width: 52, core: 34,
+  swirl: 1.1, lanes: 0.25, rays: 5, glow: 1, asteroids: 16, seed: 4242,
+  deco: { kind: 'ringed', corner: 'bas-droite', size: 96, seed: 3141, at: [258, 138] },
+};
+
 export function createRenderer(canvas) {
-  const ctx = canvas.getContext('2d');
+  // Image de travail à K× ; le canvas visible suit la taille réelle de l'écran.
+  const buf = document.createElement('canvas');
+  buf.width = W * K;
+  buf.height = H * K;
+  const ctx = buf.getContext('2d');
   ctx.imageSmoothingEnabled = false;
+  const out = canvas.getContext('2d');
+  let up = null;
+
+  // Agrandissement « net puis doux » : facteur entier au plus proche pixel, puis une légère
+  // interpolation pour la fraction restante. Les pixels gardent tous la même taille à l'écran.
+  function present() {
+    const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+    let tw = W * K, th = H * K;
+    if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
+      tw = Math.round(canvas.clientWidth * dpr);
+      th = Math.round(canvas.clientHeight * dpr);
+    }
+    if (canvas.width !== tw || canvas.height !== th) {
+      canvas.width = tw;
+      canvas.height = th;
+    }
+    if (tw === buf.width && th === buf.height) {
+      out.imageSmoothingEnabled = false;
+      out.drawImage(buf, 0, 0);
+      return;
+    }
+    const n = Math.max(1, Math.ceil(Math.min(tw / buf.width, th / buf.height)));
+    let src = buf;
+    if (n > 1) {
+      if (!up || up.width !== buf.width * n) {
+        up = document.createElement('canvas');
+        up.width = buf.width * n;
+        up.height = buf.height * n;
+      }
+      const u = up.getContext('2d');
+      u.imageSmoothingEnabled = false;
+      u.drawImage(buf, 0, 0, up.width, up.height);
+      src = up;
+    }
+    out.imageSmoothingEnabled = true;
+    out.imageSmoothingQuality = 'high';
+    out.drawImage(src, 0, 0, tw, th);
+  }
   const cache = new Map();
   let currentStar = 'G';
-  const starRng = new Rng(99);
-  const stars = Array.from({ length: 140 }, () => ({
-    x: starRng.range(0, W),
-    y: starRng.range(0, H),
-    b: starRng.range(0.2, 1),
-    tw: starRng.range(0, 6.28),
-  }));
+  let currentBodies = [];
+  let currentSystem = null;
+  let currentModel = 'mandalay';
+  let currentNpc = 0;
 
+  // ---------- Pixel Planets ----------
+  // Chaque sprite est rafraîchi à cadence réduite dans un petit canvas 2D.
+  const pp = createPixelPlanets();
+  const specs = new Map();
+  const sprites = new Map();
+  const specOf = (key, make) => {
+    if (!specs.has(key)) {
+      if (specs.size > 200) specs.clear();
+      specs.set(key, make());
+    }
+    return specs.get(key);
+  };
+
+  // Le sprite est calculé à K× (D·K pixels de shader) : planètes et astéroïdes plus fins.
+  // s.size et s.off sont exprimés dans le repère logique.
+  function ppSprite(key, spec, D, t, fps = 12, tint = null) {
+    if (!pp.ok) return null;
+    const DK = Math.max(1, Math.round(D * K));
+    const ext = pp.extent(spec, DK);
+    let s = sprites.get(key);
+    if (!s || s.ext !== ext || s.D !== D) {
+      if (sprites.size > 90) sprites.clear();
+      const c = document.createElement('canvas');
+      c.width = ext;
+      c.height = ext;
+      s = { canvas: c, ctx: c.getContext('2d'), ext, D, at: -1, ok: false, off: Math.round(ext / 2 - DK / 2) / K, size: ext / K };
+      sprites.set(key, s);
+    }
+    if (s.at < 0 || t - s.at >= 1 / fps || t < s.at) {
+      s.ctx.clearRect(0, 0, ext, ext);
+      s.ok = pp.draw(s.ctx, spec, ext / 2, ext / 2, DK, t);
+      if (s.ok && tint) {
+        // Voile d'atmosphère sur un astre vu depuis le sol.
+        s.ctx.globalCompositeOperation = 'source-atop';
+        s.ctx.fillStyle = tint;
+        s.ctx.fillRect(0, 0, ext, ext);
+        s.ctx.globalCompositeOperation = 'source-over';
+      }
+      s.at = t;
+    }
+    return s.ok ? s : null;
+  }
+  const blitSpr = (spr, x, y) => ctx.drawImage(spr.canvas, snap(x), snap(y), spr.size, spr.size);
+
+  // Dessine un corps de rayon r centré en (x, y). Renvoie false si WebGL est indisponible.
+  function drawBody(body, x, y, r, t, { key = body.id, fps = 12, tint = null } = {}) {
+    const D = r * 2 + 1;
+    const spr = ppSprite(`${key}:${D}`, specOf(`b:${body.id}:${body.type}`, () => specForBody(body)), D, t, fps, tint);
+    if (!spr) return false;
+    blitSpr(spr, x - r - spr.off, y - r - spr.off);
+    return true;
+  }
+
+  // Rendu de secours, calculé à K× et posé au pixel fin.
   function planet(body, r) {
     const key = `${body.id}:${r}`;
     if (!cache.has(key)) {
       if (cache.size > 80) cache.clear();
-      cache.set(key, renderPlanet(r, body));
+      cache.set(key, renderPlanet(r * K, body));
     }
     return cache.get(key);
   }
+  const blit = (img, x, y) => ctx.drawImage(img, snap(x), snap(y), img.width / K, img.height / K);
 
-  function starfield(t, drift = 2, tint = '#ffffff') {
-    ctx.fillStyle = '#04050b';
-    ctx.fillRect(0, 0, W, H);
-    for (const s of stars) {
-      const x = (s.x - t * drift * s.b + W * 10) % W;
-      const tw = 0.6 + 0.4 * Math.sin(t * 2 + s.tw);
-      ctx.globalAlpha = s.b * tw;
-      ctx.fillStyle = s.b > 0.85 ? tint : '#c8d0ff';
-      ctx.fillRect(Math.round(x), Math.round(s.y), 1, 1);
+  // ---------- Espace ----------
+
+  // Un « espace » : nébuleuse précalculée + étoiles scintillantes + astéroïdes + planète décor.
+  function spaceOf(id, opts = {}, over = null) {
+    return cached(`space:${id}:${opts.region || ''}:${opts.star || ''}:${over ? 'x' : ''}`, () => {
+      const R = { ...spaceRecipe(id, opts), ...over };
+      const r = rngOf(R.seed + 31);
+      const tc = themeColors(R.theme);
+      const [fx, fy] = R.focal;
+      const rocks = [];
+      for (let i = 0; i < R.asteroids; i++) {
+        // Un champ d'astéroïdes qui s'éloigne lentement du foyer lumineux.
+        const big = r() < 0.25;
+        const D = big ? 16 + Math.floor(r() * 10) : 7 + Math.floor(r() * 8);
+        const a = r() * Math.PI * 2, dist = 24 + r() * 120;
+        const x = fx - (NW - W) / 2 + Math.cos(a) * dist, y = fy - (NH - H) / 2 + Math.sin(a) * dist * 0.7;
+        const depth = 0.5 + D / 14;
+        rocks.push({
+          x, y, D, depth,
+          vx: Math.cos(a) * (0.6 + r() * 1.4) * depth, vy: Math.sin(a) * (0.4 + r() * 0.8) * depth,
+          rot: r() * 6.28, spin: (r() - 0.5) * 0.8,
+          spec: makeSpec('asteroid', { seed: 1 + r() * 9, size: 4 + r() * 3, colors: { rock: tc.rock } }),
+        });
+      }
+      const debris = Array.from({ length: R.asteroids ? 40 : 12 }, () => ({ x: r() * W, y: r() * H, s: r() < 0.25 ? 2 : 1, v: 2 + r() * 6, a: r() * 6.28 }));
+      return {
+        R,
+        neb: buildNebula(R),
+        stars: sparkles(R),
+        rocks,
+        debris,
+        deco: R.deco ? { ...R.deco, spec: decoSpec(R.deco, R.theme) } : null,
+        dark: hexRgb(THEMES[R.theme][0]),
+        light: THEMES[R.theme][8],
+      };
+    });
+  }
+
+  const systemSpace = (sys) => spaceOf(spaceIdFor(hashMix(sys.name, sys.star)), { region: sys.regions?.[0] || null, star: sys.star });
+
+  // Dessine un espace. cam : décalage de caméra (parallaxe) ; corners : coins permis pour la planète décor.
+  function drawSpace(sp, t, { camX = 0, camY = 0, rocks = true, deco = true, corners = null, alpha = 1, zoom = 1 } = {}) {
+    const ox = (NW - W) / 2 + camX * 0.25;
+    const oy = (NH - H) / 2 + camY * 0.25;
+    ctx.globalAlpha = alpha;
+    if (zoom !== 1) {
+      const w = W / zoom, h = H / zoom;
+      ctx.drawImage(sp.neb, (NW / 2 - w / 2 + camX * 0.25) * K, (NH / 2 - h / 2 + camY * 0.25) * K, w * K, h * K, 0, 0, W, H);
+    } else {
+      // La nébuleuse glisse au pixel fin.
+      const x = Math.max(0, Math.min((NW - W) * K, Math.round(ox * K)));
+      const y = Math.max(0, Math.min((NH - H) * K, Math.round(oy * K)));
+      ctx.drawImage(sp.neb, x, y, W * K, H * K, 0, 0, W, H);
+    }
+    // Étoiles scintillantes.
+    // Étoiles scintillantes : un cœur fin, et pour les plus brillantes une croix qui s'étire.
+    for (const s of sp.stars) {
+      const x = snap(s.x - (NW - W) / 2 - camX * 0.3), y = snap(s.y - (NH - H) / 2 - camY * 0.3);
+      if (x < -3 || y < -3 || x > W + 3 || y > H + 3) continue;
+      const k = 0.5 + 0.5 * Math.sin(t * s.sp + s.ph);
+      ctx.globalAlpha = alpha * (0.35 + 0.65 * k);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x, y, s.big ? 1 : PX, s.big ? 1 : PX);
+      if (s.big && k > 0.55) {
+        const arm = k > 0.9 ? 3 : 2;
+        ctx.globalAlpha = alpha * (k - 0.45);
+        ctx.fillStyle = sp.light;
+        ctx.fillRect(x - arm, y + PX / 2, arm, PX);
+        ctx.fillRect(x + 1, y + PX / 2, arm, PX);
+        ctx.fillRect(x + PX / 2, y - arm, PX, arm);
+        ctx.fillRect(x + PX / 2, y + 1, PX, arm);
+      }
+    }
+    ctx.globalAlpha = alpha;
+    // Planète géante dans un coin.
+    if (deco && sp.deco) {
+      const d = sp.deco;
+      const corner = corners ? corners[(d.seed >> 3) % corners.length] : d.corner;
+      const size = corners ? Math.min(d.size, 110) : d.size;
+      const right = corner.includes('droite'), top = corner.includes('haut');
+      let cx = right ? W - size * 0.12 : size * 0.12;
+      let cy = top ? -size * 0.08 : H + size * 0.12;
+      if (d.at) [cx, cy] = d.at;
+      const spr = ppSprite(`deco:${sp.R.id}:${size}`, d.spec, size, t, 5);
+      if (spr) blitSpr(spr, cx - size / 2 - spr.off - camX * 0.5, cy - size / 2 - spr.off - camY * 0.5);
+    }
+    // Astéroïdes (Pixel Planets) et débris.
+    if (rocks) {
+      const span = W + 60, spanY = H + 50;
+      for (const d of sp.debris) {
+        const x = (((d.x + Math.cos(d.a) * d.v * t - camX * 0.8) % span) + span) % span - 30;
+        const y = (((d.y + Math.sin(d.a) * d.v * t * 0.6 - camY * 0.8) % spanY) + spanY) % spanY - 25;
+        ctx.fillStyle = css(sp.dark);
+        ctx.fillRect(snap(x), snap(y), d.s * PX, d.s * PX);
+      }
+      for (let i = 0; i < sp.rocks.length; i++) {
+        const a = sp.rocks[i];
+        const x = (((a.x + a.vx * t - camX * a.depth) % span) + span) % span - 30;
+        const y = (((a.y + a.vy * t - camY * a.depth) % spanY) + spanY) % spanY - 25;
+        a.spec.layers[0].u.rotation = a.rot + t * a.spin;
+        const spr = ppSprite(`rock:${sp.R.id}:${i}`, a.spec, a.D, t + i * 0.023, 5);
+        if (spr) blitSpr(spr, x - a.D / 2 - spr.off, y - a.D / 2 - spr.off);
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -138,69 +482,80 @@ export function createRenderer(canvas) {
   function drawStar(code, cx, cy, t) {
     const s = STAR_CLASSES[code];
     if (code === 'BH') {
-      // Disque d'accrétion et lentille gravitationnelle.
-      for (let i = 0; i < 3; i++) {
-        ctx.globalAlpha = 0.25 - i * 0.07;
-        ring(ctx, cx, cy, s.radius + 6 + i * 3, '#8fb0ff');
+      const spr = ppSprite('star:BH', specOf('s:BH', () => specForStar('BH')), s.radius * 2 + 1, t, 15);
+      if (spr) {
+        blitSpr(spr, cx - s.radius - spr.off, cy - s.radius - spr.off);
+        return;
       }
-      ctx.globalAlpha = 1;
-      for (let i = -40; i <= 40; i++) {
-        const a = i / 40;
-        const y = cy + Math.sin(t * 0.5 + i) * 0.5;
-        ctx.fillStyle = Math.abs(a) < 0.3 ? '#ffe2a8' : '#ff9a3a';
-        ctx.fillRect(Math.round(cx + i), Math.round(y + a * 2), 1, 2);
-      }
+      disc(ctx, cx, cy, s.radius + 4, '#ff9a3a');
       disc(ctx, cx, cy, s.radius, '#000000');
-      ring(ctx, cx, cy, s.radius + 1, '#ffb36b');
       return;
     }
-    const glowR = s.radius * 1.9 + 6;
-    for (let i = 5; i >= 1; i--) {
-      ctx.globalAlpha = 0.07 + (5 - i) * 0.02;
-      disc(ctx, cx, cy, Math.round(s.radius + (glowR - s.radius) * (i / 5) + Math.sin(t * 1.5 + i) * 1), s.glow);
-    }
-    ctx.globalAlpha = 1;
-    disc(ctx, cx, cy, s.radius, s.color);
-    // Granulation
-    const sr = new Rng(hashMix(code, Math.floor(t * 4)));
-    for (let i = 0; i < s.radius * 2; i++) {
-      const a = sr.range(0, 6.28), d = sr.range(0, s.radius - 1);
-      ctx.fillStyle = s.glow;
-      ctx.globalAlpha = 0.35;
-      ctx.fillRect(Math.round(cx + Math.cos(a) * d), Math.round(cy + Math.sin(a) * d), 1, 1);
-    }
-    ctx.globalAlpha = 1;
+    halo(ctx, cx, cy, s.radius * 0.9, s.radius * 2.6 + 14, s.glow, 0.42);
+    halo(ctx, cx, cy, s.radius, s.radius * 1.35 + 4, s.color, 0.35);
+    const spr = ppSprite(`star:${code}:${s.radius}`, specOf(`s:${code}`, () => specForStar(code)), s.radius * 2 + 1, t, 15);
+    if (spr) blitSpr(spr, cx - s.radius - spr.off, cy - s.radius - spr.off);
+    else disc(ctx, cx, cy, s.radius, s.color);
     if (s.boost) {
       // Cônes de jet (étoile à neutrons, naine blanche).
-      const len = s.boost >= 4 ? 90 : 55;
+      const len = (s.boost >= 4 ? 90 : 55) * K;
       for (let i = 0; i < len; i++) {
-        const spread = i * 0.18;
-        const flick = Math.sin(t * 20 + i * 0.7) > 0 ? 1 : 0.6;
-        ctx.globalAlpha = (1 - i / len) * 0.8 * flick;
-        ctx.fillStyle = i % 3 ? '#9fdcff' : '#ffffff';
-        ctx.fillRect(Math.round(cx - spread / 2), Math.round(cy - s.radius - i), Math.max(1, Math.round(spread)), 1);
-        ctx.fillRect(Math.round(cx - spread / 2), Math.round(cy + s.radius + i), Math.max(1, Math.round(spread)), 1);
+        const spread = (i / K) * 0.18;
+        const flick = 0.75 + 0.25 * Math.sin(t * 20 + i * 0.35);
+        const k = 1 - i / len;
+        ctx.globalAlpha = k * k * 0.85 * flick;
+        ctx.fillStyle = '#9fdcff';
+        ctx.fillRect(snap(cx - spread / 2), snap(cy - s.radius) - i * PX, Math.max(PX, snap(spread)), PX);
+        ctx.fillRect(snap(cx - spread / 2), snap(cy + s.radius) + i * PX, Math.max(PX, snap(spread)), PX);
+        ctx.fillStyle = '#ffffff';
+        const core = Math.max(PX, snap(spread * 0.35));
+        ctx.fillRect(snap(cx - core / 2), snap(cy - s.radius) - i * PX, core, PX);
+        ctx.fillRect(snap(cx - core / 2), snap(cy + s.radius) + i * PX, core, PX);
       }
       ctx.globalAlpha = 1;
     }
   }
 
-  function drawShip(x, y, t, { scale = 1, thrust = 0, gear = false, flip = false } = {}) {
+  // ---------- Vaisseau et commandant ----------
+
+  // model : modèle à dessiner (par défaut celui du joueur) ; npc : un autre vaisseau que le sien.
+  function drawShip(x, y, t, { thrust = 0, gear = 0, flip = false, small = false, model = null, npc = false } = {}) {
+    if (S.drawShip) {
+      let m = model || currentModel;
+      if (npc && !model) {
+        const others = (S.SHIP_MODEL_IDS || []).filter((id) => id !== currentModel);
+        m = others.length ? others[(currentNpc >>> 0) % others.length] : currentModel;
+      }
+      S.drawShip(ctx, Math.round(x), Math.round(y), { t, thrust, gear, flip, small, model: m });
+      return;
+    }
+    // Ancien sprite (si sprites.js n'expose pas encore drawShip).
+    const scale = small ? 1 : 2;
     const flame = thrust > 0 ? (Math.sin(t * 40) > 0 ? '#ffe28a' : '#ff7a2a') : '#3a2a20';
-    drawSprite(ctx, SHIP, SHIP_PALETTE, x, y, scale, flip, { e: flame });
-    if (gear) drawSprite(ctx, SHIP_GEAR, SHIP_PALETTE, x, y + SHIP.length * scale, scale, flip);
+    S.drawSprite(ctx, S.SHIP, S.SHIP_PALETTE, x, y, scale, flip, { e: flame });
+    if (gear) S.drawSprite(ctx, S.SHIP_GEAR, S.SHIP_PALETTE, x, y + S.SHIP.length * scale, scale, flip);
   }
 
-  // Disposition des corps dans la vue système.
+  function drawAstro(x, y, t, pose, flip) {
+    if (S.drawAstronaut) {
+      S.drawAstronaut(ctx, Math.round(x), Math.round(y), { t, pose, flip });
+      return;
+    }
+    const frame = pose === 'walk' ? Math.floor(t * 6) % 2 : 2;
+    S.drawSprite(ctx, S.ASTRO_FRAMES[frame], S.ASTRO_PALETTE, Math.round(x), Math.round(y), 1, flip);
+  }
+
+  // ---------- Vue système ----------
+
   function layoutBodies(system) {
     const n = system.bodies.length;
-    const left = 118, right = 308;
+    const left = 112, right = 300;
     const spacing = n > 1 ? (right - left) / (n - 1) : 0;
     return system.bodies.map((b, i) => {
       const x = n > 1 ? left + i * spacing : (left + right) / 2;
-      const maxR = n > 1 ? Math.max(4, Math.floor(spacing / 2) - 2) : 18;
-      const r = Math.min(b.size, maxR);
-      const y = 92 + (i % 2 ? 10 : -6);
+      const maxR = n > 1 ? Math.max(5, Math.floor(spacing / 2) - 2) : 24;
+      const r = Math.min(Math.round(b.size * 1.25), maxR);
+      const y = 92 + Math.round(Math.sin(i * 1.9 + n) * 12);
       return { body: b, x: Math.round(x), y, r };
     });
   }
@@ -208,115 +563,174 @@ export function createRenderer(canvas) {
   function systemScene(view, t) {
     const { state } = view;
     const sys = state.system;
-    starfield(t, 1.5);
+    const sp = systemSpace(sys);
+    // La caméra dérive très lentement : le décor vit sans gêner la lecture.
+    drawSpace(sp, t, { camX: Math.sin(t * 0.05) * 40, camY: Math.sin(t * 0.037) * 12, deco: false });
     const star = STAR_CLASSES[sys.star];
     const starX = star.radius > 20 ? 4 : 24;
     const starY = 90;
     drawStar(sys.star, starX, starY, t);
 
-    const shipX = Math.max(starX + star.radius + 12, 46);
-    const shipY = 104 + Math.round(Math.sin(t * 1.6) * 1.5);
-    const shipCx = shipX + 13;
-
-    // Ligne d'orbite
-    ctx.fillStyle = '#1b2236';
-    for (let x = 100; x < W; x += 3) ctx.fillRect(x, 92, 1, 1);
+    const restX = Math.max(starX + star.radius + 10, 40);
+    // Arrivée de saut : le vaisseau entre par la gauche et freine jusqu'à sa place.
+    const arr = view.arriving ? Math.min(1, view.sceneTime / ARRIVAL_DURATION) : 1;
+    const ease = 1 - Math.pow(1 - arr, 3);
+    const shipX = Math.round(-SMALL_W - 30 + (restX + SMALL_W + 30) * ease);
+    const shipY = 116 + Math.round(Math.sin(t * 1.6) * 1.5);
+    const shipCx = shipX + SMALL_W / 2;
 
     const layout = layoutBodies(sys);
     view.layout = layout;
     const wave = view.scanWave;
+    // Orbite discrète.
+    ctx.fillStyle = '#c8d4ff';
+    for (let x = 100; x < W; x += 2) {
+      ctx.globalAlpha = 0.3 * Math.min(1, (x - 100) / 30);
+      ctx.fillRect(x, snap(92 + Math.sin(((x - 112) / Math.max(1, (300 - 112) / Math.max(1, layout.length - 1))) * 1.9 + layout.length) * 12), PX, PX);
+    }
+    ctx.globalAlpha = 1;
     for (const { body, x, y, r } of layout) {
       const visible = body.revealed >= 1 && (wave == null || wave > x - shipCx);
-      if (visible) {
-        if (body.rings) {
-          ctx.fillStyle = '#b8a888';
-          ctx.globalAlpha = 0.7;
-          ctx.fillRect(x - r - 5, y, r * 2 + 11, 1);
-          ctx.globalAlpha = 1;
-        }
-        ctx.drawImage(planet(body, r), x - r, y - r);
-        if (body.rings) {
-          ctx.fillStyle = '#d8c8a0';
-          ctx.fillRect(x - r - 5, y + 1, 5, 1);
-          ctx.fillRect(x + r + 1, y + 1, 5, 1);
-        }
+      if (visible && drawBody(body, x, y, r, t)) {
+        // Rendu WebGL (anneaux compris).
+      } else if (visible) {
+        blit(planet(body, r), x - r, y - r);
       } else {
-        const blink = 0.4 + 0.3 * Math.sin(t * 3 + x);
+        // Signal inconnu : une petite lueur qui pulse, cerclée d'un anneau fin.
+        const blink = 0.5 + 0.3 * Math.sin(t * 3 + x);
+        halo(ctx, x, y, 0.5, 5, '#9fb4ff', 0.35 * blink);
         ctx.globalAlpha = blink;
-        ring(ctx, x, y, 3, '#7a86a8');
+        ring(ctx, x, y, 3, '#cfd8ff');
+        ctx.fillStyle = '#eef2ff';
+        ctx.fillRect(x - PX / 2, y - PX / 2, PX, PX);
         ctx.globalAlpha = 1;
       }
-      const labelY = y + Math.max(r, 4) + 4;
-      drawText(ctx, body.index, x - (String(body.index).length * 4) / 2 + 1, labelY, visible ? '#8892b0' : '#4a5270');
+      const labelY = y + Math.max(r, 4) + 6;
+      bodyTag(ctx, body.index, x + 0.5, labelY, { visible, selected: view.selectedBodyId === body.id, hover: view.hoverBody === body.id });
       if (visible && (body.revealed >= 2 ? body.bio || body.geo || body.feature || body.terraformable : body.hint)) {
-        drawText(ctx, '!', x - 1, y - Math.max(r, 4) - 8, Math.sin(t * 5) > 0 ? '#ffb347' : '#ff7a2a');
+        label(ctx, '!', x + 0.5, y - Math.max(r, 4) - 10, Math.sin(t * 5) > 0 ? '#ffd27a' : '#ff9a4a', 8);
       }
       if (body.landed) {
-        ctx.fillStyle = '#6fd3ff';
-        ctx.fillRect(x - 1, y - Math.max(r, 4) - 3, 3, 1);
+        ctx.fillStyle = '#7fe0ff';
+        ctx.fillRect(x - 1, y - Math.max(r, 4) - 3, 3, PX);
+      }
+      if (view.hoverBody === body.id && view.selectedBodyId !== body.id) {
+        ctx.globalAlpha = 0.7;
+        ring(ctx, x, y, Math.max(r, 4) + 3, '#cfe4ff');
+        ctx.globalAlpha = 1;
       }
       if (view.selectedBodyId === body.id) {
-        const s = Math.max(r, 4) + 3 + (Math.sin(t * 6) > 0 ? 1 : 0);
-        ctx.fillStyle = '#ffb347';
-        for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-          ctx.fillRect(x + sx * s - (sx > 0 ? 2 : 0), y + sy * s, 3, 1);
-          ctx.fillRect(x + sx * s, y + sy * s - (sy > 0 ? 2 : 0), 1, 3);
-        }
+        const s = Math.max(r, 4) + 3 + (0.5 + 0.5 * Math.sin(t * 4)) * 1.5;
+        ring(ctx, x, y, s, '#ffd27a', 2);
+        ctx.globalAlpha = 0.35;
+        ring(ctx, x, y, s + 2, '#ffd27a');
+        ctx.globalAlpha = 1;
       }
     }
 
     // Vague du scan automatique
     if (wave != null && wave < 400) {
-      ctx.globalAlpha = Math.max(0, 1 - wave / 300);
-      ring(ctx, shipCx, shipY + 4, wave, '#6fd3ff');
-      ring(ctx, shipCx, shipY + 4, Math.max(0, wave - 4), '#2a6f9a');
+      const fade = Math.max(0, 1 - wave / 300);
+      ctx.globalAlpha = fade;
+      ring(ctx, shipCx, shipY + 4, wave, '#bff4ff', 2);
+      ctx.globalAlpha = fade * 0.6;
+      ring(ctx, shipCx, shipY + 4, Math.max(0, wave - 2), '#62c8f0');
+      ctx.globalAlpha = fade * 0.3;
+      ring(ctx, shipCx, shipY + 4, Math.max(0, wave - 5), '#3a8ac0');
       ctx.globalAlpha = 1;
     }
     // Rayon du scan manuel
     if (view.beam && view.beam.until > t) {
       const target = layout.find((l) => l.body.id === view.beam.bodyId);
       if (target) {
-        const steps = 60;
+        const steps = 160;
         for (let i = 0; i < steps; i++) {
-          if ((i + Math.floor(t * 30)) % 3 === 0) continue;
           const k = i / steps;
-          ctx.fillStyle = '#6fd3ff';
-          ctx.fillRect(Math.round(shipCx + 13 + (target.x - shipCx - 13) * k), Math.round(shipY + 4 + (target.y - shipY - 4) * k), 1, 1);
+          const pulse = ((i + Math.floor(t * 60)) % 8) / 8;
+          ctx.globalAlpha = 0.35 + 0.65 * pulse;
+          ctx.fillStyle = pulse > 0.8 ? '#ffffff' : '#8fe4ff';
+          ctx.fillRect(snap(shipCx + SMALL_W / 2 + (target.x - shipCx - SMALL_W / 2) * k), snap(shipY + 4 + (target.y - shipY - 4) * k), PX, PX);
         }
+        ctx.globalAlpha = 1;
       }
     }
-    // Écopage : traînée de plasma vers le vaisseau
-    if (view.scoopUntil && view.scoopUntil > t) {
-      for (let i = 0; i < 30; i++) {
-        ctx.fillStyle = Math.random() > 0.5 ? star.color : star.glow;
-        ctx.fillRect(Math.round(shipX - Math.random() * 20), Math.round(shipY + 2 + Math.random() * 6), 1, 1);
+    if (arr < 1) {
+      // Sillage de sortie d'hyperespace derrière le vaisseau.
+      for (let i = 0; i < 16; i++) {
+        ctx.globalAlpha = (1 - arr) * (0.6 - i * 0.03);
+        ctx.fillStyle = i % 3 ? '#8a9cff' : '#ffffff';
+        const len = Math.round((1 - arr) * (40 + i * 5));
+        ctx.fillRect(shipX - len, shipY + 1 + ((i * 3) % (SMALL_H * K)) * PX, len, PX);
       }
+      ctx.globalAlpha = 1;
     }
-    drawShip(shipX, shipY, t, { thrust: 1 });
+    drawShip(shipX, shipY, t, { thrust: arr < 1 ? 0.6 + 0.4 * (1 - arr) : 0.6, small: true });
+    // Fin du flash blanc du saut.
+    if (view.arriving && view.sceneTime < 0.35) {
+      ctx.globalAlpha = 1 - view.sceneTime / 0.35;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
   }
 
+  // ---------- Saut ----------
+
   function jumpScene(view, t) {
-    const k = Math.min(1, view.sceneTime / JUMP_DURATION);
+    // Vue de côté, comme le sprite : le vaisseau file vers la droite dans le tunnel hyperspatial.
+    const st = view.sceneTime;
+    const k = Math.min(1, st / JUMP_DURATION);
     ctx.fillStyle = '#02030a';
     ctx.fillRect(0, 0, W, H);
+    // Le décor d'arrivée transparaît peu à peu derrière le tunnel.
+    if (view.state?.system) drawSpace(systemSpace(view.state.system), t, { alpha: 0.1 + 0.6 * k * k, camX: -st * 60, rocks: false, deco: false });
     const target = STAR_CLASSES[view.jumpStar || 'G'];
-    const rng = new Rng(7);
-    for (let i = 0; i < 160; i++) {
-      const a = rng.range(0, 6.28);
-      const speed = rng.range(0.4, 1.2);
-      const d0 = ((rng.range(0, 1) + view.sceneTime * speed * 1.4) % 1) * 200;
-      const len = 4 + d0 * 0.25 * (0.5 + k);
-      const cx = W / 2, cy = H / 2;
-      ctx.fillStyle = i % 4 === 0 ? target.glow : i % 3 === 0 ? '#ffffff' : '#6a7cff';
-      ctx.globalAlpha = Math.min(1, d0 / 60);
-      for (let j = 0; j < len; j += 1) {
-        ctx.fillRect(Math.round(cx + Math.cos(a) * (d0 + j)), Math.round(cy + Math.sin(a) * (d0 + j) * 0.7), 1, 1);
+    // Parois du tunnel : deux bandes ondulantes qui défilent vers la gauche.
+    const scroll = st * 90 + st * st * 120;
+    for (let x = 0; x < W; x += PX) {
+      const wob = Math.sin((x + scroll) * 0.045) * 6 + Math.sin((x + scroll * 1.3) * 0.11) * 3;
+      const top = snap(34 + wob - k * 10);
+      const bot = snap(H - 34 - wob + k * 10);
+      for (let i = 0; i < 7; i++) {
+        ctx.globalAlpha = (0.34 - i * 0.045) * (1 - k * 0.4);
+        ctx.fillStyle = i === 0 ? '#b8c4ff' : i < 3 ? '#8a9cff' : '#3a4ac0';
+        ctx.fillRect(x, top - i * 1.5, PX, PX);
+        ctx.fillRect(x, bot + i * 1.5, PX, PX);
       }
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = '#3a4ac0';
+      ctx.fillRect(x, 0, PX, Math.max(0, top - 12));
+      ctx.fillRect(x, bot + 12, PX, H - bot - 12);
+    }
+    // Traînées d'étoiles : elles filent de droite à gauche en s'allongeant (le vaisseau accélère).
+    const rng = new Rng(7);
+    for (let i = 0; i < 150; i++) {
+      const y = Math.round(rng.range(0, H));
+      const speed = rng.range(0.5, 1.4);
+      const ph = rng.range(0, 1);
+      const travel = speed * (0.7 * st + 0.9 * st * st);
+      const len = Math.round(3 + speed * (6 + k * k * 70));
+      const span = W + len + 20;
+      const x = snap(W - ((ph + travel) % 1) * span);
+      const yy = y + (i & 1) * PX;
+      ctx.fillStyle = i % 4 === 0 ? target.glow : i % 3 === 0 ? '#ffffff' : '#8a9cff';
+      ctx.globalAlpha = (0.35 + 0.5 * (speed - 0.5)) * (1 - k * 0.3);
+      ctx.fillRect(x, yy, len, PX);
+      // Tête de la traînée plus vive.
+      ctx.globalAlpha = Math.min(1, ctx.globalAlpha * 1.6);
+      ctx.fillRect(x, yy, Math.min(len, 2), PX);
     }
     ctx.globalAlpha = 1;
-    // Le tunnel s'ouvre sur l'étoile cible.
-    disc(ctx, W / 2, H / 2, Math.round(2 + k * k * 30), target.color);
-    drawShip(W / 2 - 13, H / 2 + 22, view.sceneTime, { thrust: 1 });
+    // L'étoile d'arrivée grossit au bout du tunnel, à droite.
+    const sr = Math.round(2 + k * k * 22);
+    const sx = Math.round(W + 6 - k * k * 40);
+    halo(ctx, sx, H / 2, sr, sr * 2.4 + 10, target.glow, 0.6);
+    disc(ctx, sx, H / 2, sr, target.color);
+    halo(ctx, sx, H / 2, 0, sr * 0.8, '#ffffff', 0.5);
+    // Le vaisseau, de profil, tremble sous la poussée et avance vers l'étoile à la fin.
+    const shake = Math.round(Math.sin(st * 37) * (0.5 + k));
+    const shipX = 70 + k * k * k * 90;
+    drawShip(shipX, H / 2 - SHIP_H / 2 + shake, st, { thrust: 1 });
     if (k > 0.85) {
       ctx.globalAlpha = (k - 0.85) / 0.15;
       ctx.fillStyle = '#ffffff';
@@ -325,284 +739,581 @@ export function createRenderer(canvas) {
     }
   }
 
-  // ----- Surface -----
+  // ---------- Surface ----------
 
-  function terrain(body) {
-    const key = `terrain:${body.id}`;
-    if (cache.has(key)) return cache.get(key);
-    const pal = BODY_TYPES[body.type].palette;
-    const seed = body.seed % 100000;
-    const far = [], near = [];
-    for (let x = 0; x < W; x++) {
-      far.push(118 + Math.round(fbm(x / 40, 0, seed) * 26 - 13));
-      let h = 140 + Math.round(fbm(x / 22, 3, seed + 1) * 14 - 7);
-      if (x > 60 && x < 130) h = 140; // zone d'atterrissage plane
-      near.push(h);
+  function panoramaOf(body) {
+    const R = panoramaRecipe(panoramaIdFor(body), body.type);
+    const theme = currentSystem ? systemSpace(currentSystem).R.theme : 'violet';
+    return cached(`pano:${R.id}:${body.type}:${R.airless ? theme : ''}`, () => buildPanorama(R, { space: theme }));
+  }
+
+  // L'astre géant vu depuis le sol : le plus gros voisin du système, sinon une planète décor.
+  function skyGiant(body) {
+    const others = currentBodies.filter((b) => b.id !== body.id);
+    const big = others.sort((a, b) => b.size - a.size)[0];
+    return big || { id: `giant-${body.id}`, type: 'gas', seed: body.seed + 7 };
+  }
+
+  const twinkles = Array.from({ length: 90 }, (_, i) => ({ x: hash2(i, 1, 5) * W, y: hash2(i, 2, 5) * 110, b: 0.3 + hash2(i, 3, 5) * 0.7, ph: hash2(i, 4, 5) * 6.28 }));
+
+  // Décor de surface : ciel, soleil, astres, nuages, chaînes de montagnes, sol.
+  // cam.x > 0 avance vers la droite ; cam.y > 0 décale les plans vers le bas (le sol monte).
+  function surfaceBackdrop(body, t, cam = { x: 0, y: 0 }) {
+    return drawPanorama(panoramaOf(body), body, t, cam);
+  }
+
+  function drawPanorama(P, body, t, cam) {
+    if (P.sky) {
+      blit(P.sky, 0, cam.y * 0.03);
+    } else {
+      // Sans atmosphère : la nébuleuse du système, assombrie.
+      drawSpace(systemSpace(currentSystem), t, { camX: cam.x * 0.2, camY: -cam.y * 0.2 - 30, rocks: false, deco: false });
+      ctx.fillStyle = 'rgba(4, 4, 12, 0.35)';
+      ctx.fillRect(0, 0, W, H);
     }
-    const off = document.createElement('canvas');
-    off.width = W;
-    off.height = H;
-    const o = off.getContext('2d');
-    for (let x = 0; x < W; x++) {
-      o.fillStyle = pal[0];
-      o.fillRect(x, far[x], 1, H - far[x]);
-      o.fillStyle = pal[1];
-      o.fillRect(x, near[x], 1, H - near[x]);
-      o.fillStyle = pal[2];
-      o.fillRect(x, near[x], 1, 1);
-      for (let y = near[x] + 2; y < H; y++) {
-        if (hash2(x, y, seed) > 0.93) {
-          o.fillStyle = hash2(y, x, seed) > 0.5 ? pal[0] : pal[2];
-          o.fillRect(x, y, 1, 1);
+    // Étoiles
+    if (P.stars > 0) {
+      for (const s of twinkles) {
+        ctx.globalAlpha = P.stars * s.b * (0.55 + 0.45 * Math.sin(t * 1.7 + s.ph));
+        ctx.fillStyle = '#f4f6ff';
+        const sz = s.b > 0.92 ? 1 : PX;
+        ctx.fillRect(snap(s.x), snap(s.y + cam.y * 0.05), sz, sz);
+      }
+      ctx.globalAlpha = 1;
+    }
+    // Aurores
+    if (P.aurora) {
+      // Rideaux d'aurore : un ruban ondulant, des rayons verticaux qui s'estompent vers le bas.
+      for (let px = 0; px < W * K; px++) {
+        const x = px / K;
+        const y0 = snap(16 + Math.sin(x * 0.022 + t * 0.3) * 10 + Math.sin(x * 0.009 - t * 0.17) * 8 + cam.y * 0.08);
+        const ray = valueNoise(x * 0.18 + t * 0.6, 0, 77);
+        const len = (18 + ray * 26) * K;
+        const hue = valueNoise(x * 0.012 - t * 0.05, 3, 78);
+        const top = hue > 0.62 ? P.aurora[2] : P.aurora[1];
+        // Rideau : un ourlet vif en haut, puis des segments de plus en plus transparents.
+        ctx.globalAlpha = 0.2 + 0.4 * ray;
+        ctx.fillStyle = top;
+        ctx.fillRect(x, y0, PX, 3 * PX);
+        ctx.fillStyle = P.aurora[0];
+        for (let j = 3; j < len; j += 3) {
+          const k = j / len;
+          ctx.globalAlpha = (0.1 + 0.28 * ray) * (1 - k) * (1 - k * 0.3);
+          ctx.fillRect(x, y0 + j * PX, PX, 3 * PX);
         }
       }
+      ctx.globalAlpha = 1;
     }
-    const t = { canvas: off, near, far };
-    cache.set(key, t);
-    return t;
+    // Soleil et halo
+    const sun = P.sun;
+    const sx = Math.round(sun.x - cam.x * 0.02), sy = Math.round(sun.y + cam.y * 0.05);
+    halo(ctx, sx, sy, sun.r * 0.8, sun.r * 6, sun.glow, P.airless ? 0.28 : 0.42);
+    halo(ctx, sx, sy, sun.r, sun.r * 2, sun.color, P.airless ? 0.35 : 0.5);
+    disc(ctx, sx, sy, sun.r, css(mix(rgbOf(sun.color), rgbOf(sun.glow), 0.35)));
+    disc(ctx, sx - 0.5, sy - 0.5, sun.r - 1, sun.color);
+    disc(ctx, sx - 1, sy - 1, Math.max(1, sun.r - 3.5), '#ffffff');
+    // Astre géant (Pixel Planets) et petites lunes
+    const R = P.recipe;
+    const tint = P.airless ? null : css(P.horizon, 0.28);
+    if (R.giant) {
+      const g = skyGiant(body);
+      drawBody(g, R.giant.x - cam.x * 0.05, R.giant.y + cam.y * 0.08, Math.round(R.giant.d / 2), t, { key: `${g.id}-sky-${body.id}`, fps: 6, tint });
+    }
+    for (let i = 0; i < R.moons; i++) {
+      const mx = 30 + hash2(i, R.id, 9) * 260, my = 14 + hash2(i, R.id, 11) * 40;
+      const mr = 2 + Math.floor(hash2(i, R.id, 13) * 4);
+      const moon = { id: `moon-${R.id}-${i}`, type: i % 2 ? 'icy' : 'rocky', seed: R.seed + i * 17 };
+      if (!drawBody(moon, mx - cam.x * 0.03, my + cam.y * 0.06, mr, t, { fps: 3, tint })) disc(ctx, mx, my, mr, '#c8c0d8');
+    }
+    drawLayers(ctx, P.layers, { t, camX: cam.x, camY: cam.y });
+    blit(P.ground, 0, cam.y);
+    return { near: P.near, P };
   }
 
-  function surfaceBackdrop(body, t) {
-    starfield(t, 0.2);
-    // Étoile du système, basse sur l'horizon, et une planète voisine dans le ciel.
-    const star = STAR_CLASSES[currentStar];
-    disc(ctx, 270, 34, Math.max(2, Math.round(star.radius / 8)), star.color === '#000000' ? '#ff9a3a' : star.color);
-    const ter = terrain(body);
-    ctx.drawImage(ter.canvas, 0, 0);
-    return ter;
+  // Neige, braises, poussière ou spores, au premier plan.
+  function surfaceParticles(P, t, cam = { x: 0, y: 0 }) {
+    const kind = P.recipe.particles;
+    if (!kind) return;
+    const n = kind === 'neige' ? 70 : 34;
+    for (let i = 0; i < n; i++) {
+      const a = hash2(i, 7, P.recipe.id), b = hash2(i, 8, P.recipe.id), c = hash2(i, 9, P.recipe.id);
+      let x, y, col;
+      if (kind === 'neige') {
+        x = (a * W + t * (6 + c * 8) + Math.sin(t + i) * 4 - cam.x * 0.5) % W;
+        y = (b * H + t * (10 + c * 14) + cam.y) % H;
+        col = c > 0.5 ? '#ffffff' : '#d8e8ff';
+      } else if (kind === 'braises') {
+        x = (a * W + Math.sin(t * 0.7 + i) * 6 - cam.x * 0.5) % W;
+        y = H - ((b * H + t * (6 + c * 10)) % H) + cam.y;
+        col = c > 0.6 ? '#ffd27a' : '#ff6a2a';
+      } else if (kind === 'spores') {
+        x = (a * W + t * 3 + Math.sin(t * 0.5 + i) * 10 - cam.x * 0.5) % W;
+        y = (b * 150 + Math.sin(t * 0.8 + i * 2) * 8 + cam.y) % H;
+        col = c > 0.5 ? '#d8ff9a' : '#7ae0a0';
+      } else {
+        x = (a * W + t * (8 + c * 20) - cam.x * 0.5) % W;
+        y = 100 + b * 80 + Math.sin(t + i) * 3 + cam.y;
+        col = css(P.dust);
+      }
+      x = ((x % W) + W) % W;
+      ctx.globalAlpha = 0.5 + c * 0.5;
+      ctx.fillStyle = col;
+      // Les particules proches (c élevé) sont plus grosses : un peu de profondeur.
+      const sz = c > 0.8 ? 1 : PX;
+      ctx.fillRect(snap(x), snap(y), sz, sz);
+    }
+    ctx.globalAlpha = 1;
   }
 
-  function drawFeatures(body, sf, ter, t) {
+  function drawFeatures(body, sf, near, t) {
     if (!sf || !sf.analyzed) return;
-    const g = (x) => ter.near[x];
+    const g = (x) => near[Math.max(0, Math.min(W - 1, x))];
     if (body.bio) {
       for (let i = 0; i < body.bio * 3; i++) {
-        const x = 150 + ((i * 37 + body.seed) % 150);
+        const x = 190 + ((i * 37 + body.seed) % 120);
         const y = g(x);
         const sway = Math.sin(t * 2 + i) > 0.6 ? 1 : 0;
-        ctx.fillStyle = ['#7ef0a0', '#e0f070', '#f07ad0', '#70d0f0'][i % 4];
-        ctx.fillRect(x + sway, y - 3, 1, 3);
-        ctx.fillRect(x - 1 + sway, y - 4, 3, 1);
+        const c = ['#7ef0a0', '#e0f070', '#f07ad0', '#70d0f0'][i % 4];
+        ctx.fillStyle = '#1e3a2a';
+        ctx.fillRect(x, y - 4, 1, 4);
+        ctx.fillStyle = c;
+        ctx.fillRect(x - 1 + sway, y - 6, 3, 2);
+        ctx.fillRect(x + sway, y - 7, 1, 1);
+        ctx.globalAlpha = 0.25 + 0.2 * Math.sin(t * 3 + i);
+        ctx.fillRect(x - 2 + sway, y - 7, 5, 4);
+        ctx.globalAlpha = 1;
       }
     }
     if (body.geo) {
-      const x = 250;
+      const x = 260;
       const y = g(x);
       const phase = (t * 0.7) % 3;
-      ctx.fillStyle = '#3a3a4a';
-      ctx.fillRect(x - 3, y - 2, 7, 2);
+      ctx.fillStyle = '#2a2a3a';
+      ctx.fillRect(x - 4, y - 2, 9, 2);
+      ctx.fillStyle = '#4a4a5e';
+      ctx.fillRect(x - 3, y - 3, 7, 1);
       if (phase < 1.4) {
-        for (let i = 0; i < 25; i++) {
-          ctx.fillStyle = i % 2 ? '#d6ecff' : '#9fc8e8';
-          ctx.globalAlpha = 1 - i / 25;
-          ctx.fillRect(x + Math.round(Math.sin(i + t * 8) * (i / 8)), y - 2 - Math.round(i * phase * 1.4), 1, 1);
+        for (let i = 0; i < 30; i++) {
+          ctx.fillStyle = i % 2 ? '#e6f4ff' : '#a8d0f0';
+          ctx.globalAlpha = 1 - i / 30;
+          ctx.fillRect(x + Math.round(Math.sin(i + t * 8) * (i / 7)), y - 3 - Math.round(i * phase * 1.4), 1 + (i % 3 === 0 ? 1 : 0), 1);
         }
         ctx.globalAlpha = 1;
       }
     }
     if (body.feature === 'crash') {
-      const x = 200, y = g(200);
-      drawShip(x, y - 7, t, { flip: true });
-      ctx.fillStyle = '#2a2a2a';
-      ctx.fillRect(x - 6, y - 1, 40, 2);
+      const x = 214, y = g(230);
+      ctx.save();
+      ctx.translate(x + SMALL_W / 2, y - 3);
+      ctx.rotate(0.25);
+      drawShip(-SMALL_W / 2, -SMALL_H / 2, t, { flip: true, small: true, npc: true });
+      ctx.restore();
+      ctx.fillStyle = '#1a1a22';
+      ctx.fillRect(x - 10, y - 1, 46, 2);
       if (Math.sin(t * 3) > 0) {
         ctx.fillStyle = '#ff3a3a';
-        ctx.fillRect(x + 10, y - 9, 1, 1);
+        ctx.fillRect(x + 12, y - 9, 1, 1);
       }
+      for (let i = 0; i < 8; i++) {
+        ctx.globalAlpha = 0.3 * (1 - i / 8);
+        ctx.fillStyle = '#6a6a7a';
+        ctx.fillRect(Math.round(x + 18 + Math.sin(t + i) * 2), Math.round(y - 8 - i * 3 - ((t * 6) % 3)), 2, 2);
+      }
+      ctx.globalAlpha = 1;
     }
     if (body.feature === 'guardian') {
       for (let i = 0; i < 4; i++) {
-        const x = 180 + i * 28, y = g(x);
-        ctx.fillStyle = '#3a4a5a';
-        ctx.fillRect(x, y - 16 + (i % 2) * 4, 4, 16 - (i % 2) * 4);
+        const x = 200 + i * 26, y = g(x);
+        const hh = 18 - (i % 2) * 5;
+        ctx.fillStyle = '#2e3a4a';
+        ctx.fillRect(x, y - hh, 5, hh);
+        ctx.fillStyle = '#4a5a6e';
+        ctx.fillRect(x, y - hh, 1, hh);
         ctx.fillStyle = Math.sin(t * 2 + i) > 0 ? '#5affd8' : '#2a9a88';
-        ctx.fillRect(x + 1, y - 12 + (i % 2) * 4, 2, 1);
-        ctx.fillRect(x + 1, y - 8 + (i % 2) * 4, 2, 1);
+        ctx.fillRect(x + 2, y - hh + 4, 2, 1);
+        ctx.fillRect(x + 2, y - hh + 8, 2, 1);
       }
     }
     if (body.feature === 'thargoid') {
       for (let i = 0; i < 5; i++) {
-        const x = 175 + i * 22, y = g(x);
+        const x = 196 + i * 22, y = g(x);
         const h = 10 + ((i * 7) % 12);
-        ctx.fillStyle = '#141a14';
+        ctx.fillStyle = '#121a14';
         for (let j = 0; j < h; j++) ctx.fillRect(x + Math.round(Math.sin(j / 3 + i) * 2), y - j, 3, 1);
         ctx.fillStyle = Math.sin(t * 3 + i) > 0 ? '#4be08a' : '#1f7a44';
         ctx.fillRect(x + 1, y - h, 1, 1);
       }
-      ctx.globalAlpha = 0.12;
+      ctx.globalAlpha = 0.1;
       ctx.fillStyle = '#4be08a';
-      ctx.fillRect(160, 110, 160, 70);
+      ctx.fillRect(180, 110, 140, 70);
       ctx.globalAlpha = 1;
     }
   }
 
-  const SHIP_LAND_X = 80;
+  const SHIP_LAND_X = 66;
+  const landedYFor = (near) => near[SHIP_LAND_X + Math.round(SHIP_W / 2)] - SHIP_H - GEAR_H;
+
+  // Rampe de la soute vers le sol, du côté droit.
+  function drawRamp(landedY, groundY, open = 1) {
+    const hatch = S.shipHatch ? S.shipHatch(currentModel) : HATCH0;
+    const hx = SHIP_LAND_X + hatch.x, hy = landedY + hatch.y;
+    const len = Math.max(6, groundY - hy + 4);
+    const ang = (Math.PI / 2) * (1 - open) + 0.55 * open;
+    const ex = hx + Math.cos(ang) * len * 0.9, ey = Math.min(groundY, hy + Math.sin(ang) * len);
+    for (let i = 0; i <= 20; i++) {
+      const k = i / 20;
+      ctx.fillStyle = i % 4 === 0 ? '#3a4050' : '#6a7282';
+      ctx.fillRect(Math.round(hx + (ex - hx) * k), Math.round(hy + (ey - hy) * k), 3, 1);
+    }
+    if (open > 0) {
+      ctx.globalAlpha = 0.5 * open;
+      ctx.fillStyle = '#ffe2a8';
+      ctx.fillRect(hx - 1, hy - 3, 5, 3);
+      ctx.globalAlpha = 1;
+    }
+    return { hx, hy, ex, ey };
+  }
 
   function landingScene(view, t) {
     const body = view.body;
     const st = view.sceneTime;
     if (st < 2.2) {
-      // Orbite : courbe de la planète en bas de l'écran.
-      starfield(t, 4);
-      const R = 260;
-      const img = planet({ ...body, id: `${body.id}-big` }, R);
-      ctx.drawImage(img, W / 2 - R, 120 - Math.round(st * 8));
+      // Le panorama (calcul fin, un peu long) est préparé dès le début, avant la descente.
+      panoramaOf(body);
+      // Orbite : la planète occupe le bas de l'écran, la nébuleuse défile.
+      drawSpace(systemSpace(currentSystem), t, { camX: st * 40, rocks: true, deco: false });
+      const R = 230;
+      if (!drawBody(body, W / 2, 128 - Math.round(st * 10) + R, R, t, { key: `${body.id}-big`, fps: 6 })) {
+        blit(planet({ ...body, id: `${body.id}-big` }, R), W / 2 - R, 128 - Math.round(st * 10));
+      }
       const k = st / 2.2;
-      drawShip(-30 + k * 260, 50 + k * 30, t, { thrust: 1 });
+      drawShip(-30 + k * 250, 46 + k * 34, t, { thrust: 1, small: true });
       return;
     }
-    const ter = surfaceBackdrop(body, t);
-    const groundY = ter.near[SHIP_LAND_X + 26];
-    const shipH = SHIP.length * 2;
-    const landedY = groundY - shipH - 4;
+    const kd = Math.min(1, (st - 2.2) / 2.2);
+    const easeD = 1 - (1 - kd) * (1 - kd);
+    // Caméra : on arrive de haut et de la gauche, les plans proches défilent plus vite.
+    const cam = { x: -(1 - easeD) * 260, y: (1 - easeD) * 110 };
+    const { near, P } = surfaceBackdrop(body, t, cam);
+    const groundY = near[SHIP_LAND_X + Math.round(SHIP_W / 2)];
+    const landedY = landedYFor(near);
     if (st < 4.4) {
-      // Descente
-      const k = (st - 2.2) / 2.2;
-      const ease = 1 - (1 - k) * (1 - k);
+      const ease = easeD;
       const y = -30 + (landedY + 30) * ease;
-      const x = SHIP_LAND_X - 60 + 60 * ease;
-      drawShip(x, y, t, { scale: 2, thrust: 1, gear: k > 0.7 });
-      // Poussée verticale
-      for (let i = 0; i < 6; i++) {
-        ctx.fillStyle = i % 2 ? '#ffe28a' : '#ff7a2a';
-        ctx.globalAlpha = 0.8 - i * 0.12;
-        ctx.fillRect(Math.round(x + 14 + (i % 3) * 8), Math.round(y + shipH + i * 2), 2, 2);
-      }
-      ctx.globalAlpha = 1;
+      const x = SHIP_LAND_X - 70 + 70 * ease;
+      drawShip(x, y, t, { thrust: 1, gear: Math.max(0, (kd - 0.6) / 0.4) });
+      surfaceParticles(P, t, cam);
       return;
     }
-    drawShip(SHIP_LAND_X, landedY, t, { scale: 2, gear: true });
+    drawShip(SHIP_LAND_X, landedY, t, { gear: 1, thrust: st < 4.8 ? (4.8 - st) / 0.4 : 0 });
     // Poussière d'atterrissage
-    if (st < 5.4) {
-      const k = (st - 4.4) / 1;
-      for (let i = 0; i < 20; i++) {
+    if (st < 5.6) {
+      const k = (st - 4.4) / 1.2;
+      for (let i = 0; i < 28; i++) {
         const dir = i % 2 ? 1 : -1;
-        ctx.globalAlpha = 1 - k;
-        ctx.fillStyle = BODY_TYPES[body.type].palette[2];
-        ctx.fillRect(Math.round(SHIP_LAND_X + 26 + dir * (10 + k * (20 + i * 2))), Math.round(groundY - 1 - (i % 4) - k * 3), 1, 1);
+        ctx.globalAlpha = (1 - k) * 0.9;
+        ctx.fillStyle = css(P.dust);
+        ctx.fillRect(Math.round(SHIP_LAND_X + SHIP_W / 2 + dir * (8 + k * (24 + i * 2))), Math.round(groundY - 1 - (i % 5) - k * 4), 2, 1);
       }
       ctx.globalAlpha = 1;
     }
-    // Rampe
-    const rampTopX = SHIP_LAND_X + 30;
-    const rampTopY = landedY + shipH - 1;
     const open = Math.min(1, Math.max(0, (st - 5.0) / 0.8));
-    const rampLen = 14;
-    const angle = (Math.PI / 2) * (1 - open) + 0.5 * open; // de replié à incliné
-    const rampEndX = rampTopX - Math.cos(angle) * rampLen;
-    const rampEndY = rampTopY + Math.sin(angle) * rampLen * open + (1 - open) * 1;
-    for (let i = 0; i <= rampLen; i++) {
-      const k = i / rampLen;
-      ctx.fillStyle = '#5a6270';
-      ctx.fillRect(Math.round(rampTopX + (rampEndX - rampTopX) * k), Math.round(rampTopY + (rampEndY - rampTopY) * k), 2, 1);
-    }
-    if (open > 0) {
-      ctx.fillStyle = '#ffd38a';
-      ctx.globalAlpha = 0.6 * open;
-      ctx.fillRect(rampTopX - 2, rampTopY - 6, 6, 6);
-      ctx.globalAlpha = 1;
-    }
+    const ramp = drawRamp(landedY, groundY, open);
     // Le commandant sort
     if (st > 5.9) {
       const k = Math.min(1, (st - 5.9) / 1.5);
       let ax, ay;
-      if (k < 0.6) {
-        const kk = k / 0.6;
-        ax = rampTopX - (rampTopX - rampEndX) * kk;
-        ay = rampTopY + (rampEndY - rampTopY) * kk - 9;
+      if (k < 0.5) {
+        const kk = k / 0.5;
+        ax = ramp.hx + (ramp.ex - ramp.hx) * kk;
+        ay = ramp.hy + (ramp.ey - ramp.hy) * kk - ASTRO_H;
       } else {
-        const kk = (k - 0.6) / 0.4;
-        ax = rampEndX - kk * 18;
-        ay = groundY - 9;
+        const kk = (k - 0.5) / 0.5;
+        ax = ramp.ex + kk * 20;
+        ay = near[Math.round(ax + ASTRO_W / 2)] - ASTRO_H;
       }
-      const frame = k >= 1 ? 2 : Math.floor(st * 6) % 2;
-      drawSprite(ctx, ASTRO_FRAMES[frame], ASTRO_PALETTE, Math.round(ax) - 3, Math.round(ay), 1, true);
+      drawAstro(ax, ay, t, k >= 1 ? 'idle' : 'walk', false);
     }
+    surfaceParticles(P, t);
     view.astroDone = st > 7.4;
   }
 
   function surfaceScene(view, t) {
     const body = view.body;
-    const ter = surfaceBackdrop(body, t);
-    drawFeatures(body, view.state.surface, ter, t);
-    const groundY = ter.near[SHIP_LAND_X + 26];
-    const shipH = SHIP.length * 2;
-    const landedY = groundY - shipH - 4;
-    drawShip(SHIP_LAND_X, landedY, t, { scale: 2, gear: true });
-    const rampTopX = SHIP_LAND_X + 30, rampTopY = landedY + shipH - 1;
-    for (let i = 0; i <= 14; i++) {
-      const k = i / 14;
-      ctx.fillStyle = '#5a6270';
-      ctx.fillRect(Math.round(rampTopX - Math.cos(0.5) * 14 * k), Math.round(rampTopY + Math.sin(0.5) * 14 * k), 2, 1);
-    }
+    const { near, P } = surfaceBackdrop(body, t);
+    drawFeatures(body, view.state.surface, near, t);
+    const landedY = landedYFor(near);
+    drawShip(SHIP_LAND_X, landedY, t, { gear: 1 });
+    const ramp = drawRamp(landedY, near[SHIP_LAND_X + Math.round(SHIP_W / 2)], 1);
     // Le commandant s'avance vers ce qu'il observe.
-    const target = view.state.surface && view.state.surface.analyzed ? 150 : 100;
-    view.astroX = view.astroX ?? 100;
+    const analyzed = view.state.surface && view.state.surface.analyzed;
+    const start = Math.round(ramp.ex + 20);
+    const target = analyzed ? 176 : start;
+    view.astroX = view.astroX ?? start;
     const moving = Math.abs(view.astroX - target) > 0.5;
-    if (moving) view.astroX += Math.sign(target - view.astroX) * 0.6;
+    if (moving) view.astroX += Math.sign(target - view.astroX) * 0.5;
     const ax = Math.round(view.astroX);
-    const frame = moving ? Math.floor(t * 6) % 2 : 2;
-    drawSprite(ctx, ASTRO_FRAMES[frame], ASTRO_PALETTE, ax, ter.near[ax + 3] - 9, 1, target < view.astroX);
-    // Lumière de la combinaison
-    if (Math.sin(t * 2) > 0.8) {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(ax + (target < view.astroX ? 1 : 4), ter.near[ax + 3] - 8, 1, 1);
-    }
+    const pose = moving ? 'walk' : analyzed ? 'scan' : 'idle';
+    drawAstro(ax, near[Math.max(0, Math.min(W - 1, ax + Math.round(ASTRO_W / 2)))] - ASTRO_H, t, pose, target < view.astroX);
+    surfaceParticles(P, t);
   }
 
   function takeoffScene(view, t) {
     const body = view.body;
-    const ter = surfaceBackdrop(body, t);
-    const groundY = ter.near[SHIP_LAND_X + 26];
-    const shipH = SHIP.length * 2;
-    const landedY = groundY - shipH - 4;
     const k = view.sceneTime / TAKEOFF_DURATION;
+    const cam = { x: k * k * 160, y: k * k * 120 };
+    const { near, P } = surfaceBackdrop(body, t, cam);
+    const landedY = landedYFor(near) + cam.y;
     const y = landedY - k * k * 220;
     const x = SHIP_LAND_X + k * k * 120;
-    drawShip(x, y, t, { scale: 2, thrust: 1, gear: k < 0.25 });
-    for (let i = 0; i < 6; i++) {
-      ctx.fillStyle = i % 2 ? '#ffe28a' : '#ff7a2a';
-      ctx.globalAlpha = 0.8 - i * 0.12;
-      ctx.fillRect(Math.round(x + 14 + (i % 3) * 8), Math.round(y + shipH + i * 2), 2, 2);
+    drawShip(x, y, t, { thrust: 1, gear: Math.max(0, 1 - k * 4) });
+    surfaceParticles(P, t, cam);
+  }
+
+  // ---------- Écopage ----------
+
+  // Plongée vers la couronne : le vaisseau arrive, se cale au-dessus de l'étoile qui occupe tout
+  // le bas de l'écran, aspire des filaments de plasma, puis repart. L'approche choisie fixe
+  // l'altitude, la densité du plasma et la chaleur ; une surchauffe déclenche alarme et étincelles.
+  // view.scoopFx : { approach, star, fuel0, fuel1, fuelMax, gained, overheat, dmg, module }.
+  const SCOOP_ALT = { far: 46, normal: 70, close: 96 };
+  const SCOOP_FLOW = { far: 70, normal: 120, close: 190 };
+
+  function scoopScene(view, t) {
+    const fx = view.scoopFx || { approach: 'normal', star: currentStar, fuel0: 10, fuel1: 18, fuelMax: 24, gained: 8, overheat: false };
+    const st = view.sceneTime;
+    const s = STAR_CLASSES[fx.star] || STAR_CLASSES.G;
+    const alt = SCOOP_ALT[fx.approach] ?? SCOOP_ALT.normal;
+    const flow = SCOOP_FLOW[fx.approach] ?? 120;
+    const { IN, OUT, on, heat, alarm } = scoopTimeline(fx, st);
+
+    // Caméra : l'étoile monte du bas pendant la plongée, l'écran tremble avec la chaleur.
+    const dive = 1 - smooth(st / IN);
+    const shake = on * (0.25 + heat * 1.6) + (alarm ? 1.4 : 0);
+    const sx = snap((hash2(Math.floor(t * 30), 1, 9) - 0.5) * shake);
+    const sy = snap((hash2(Math.floor(t * 30), 2, 9) - 0.5) * shake);
+    ctx.save();
+    ctx.translate(sx, sy);
+    drawSpace(systemSpace(currentSystem), t, { camX: st * 30, camY: -dive * 30, rocks: false, deco: false });
+
+    const R = 190;
+    const cx = 120, cy = 330 + Math.round(dive * 60);
+    const surfY = (x) => cy - Math.sqrt(Math.max(0, R * R - (x - cx) * (x - cx)));
+    halo(ctx, cx, cy, R * 0.92, R + 58, s.glow, 0.5);
+    halo(ctx, cx, cy, R, R + 18, s.color, 0.45);
+    const spr = ppSprite(`star:${fx.star}:scoop`, specOf(`s:${fx.star}`, () => specForStar(fx.star)), R * 2 + 1, t, 8);
+    if (spr) blitSpr(spr, cx - R - spr.off, cy - R - spr.off);
+    else disc(ctx, cx, cy, R, s.color);
+
+    // Protubérances : arches de plasma qui naissent et retombent sur le limbe.
+    for (let j = 0; j < 4; j++) {
+      const life = (t * 0.22 + j * 0.27) % 1;
+      const a0 = cx - 150 + j * 78 + Math.sin(j * 7.1) * 16;
+      const span = 22 + j * 6;
+      const h = Math.sin(life * Math.PI) * (16 + j * 5);
+      for (let i = 0; i <= 40; i++) {
+        const k = i / 40;
+        const x = a0 + span * k;
+        const y = Math.min(surfY(a0), surfY(a0 + span)) + 2 - Math.sin(k * Math.PI) * h;
+        ctx.globalAlpha = Math.sin(life * Math.PI) * (0.5 + 0.5 * hash2(i, j, Math.floor(t * 12)));
+        ctx.fillStyle = i % 5 === 0 ? '#ffffff' : s.color;
+        ctx.fillRect(snap(x), snap(y), PX * 2, PX * 2);
+      }
     }
     ctx.globalAlpha = 1;
+
+    // Vaisseau : arrivée par la gauche, stationnaire, puis départ en accélérant.
+    const hoverX = cx - SHIP_W / 2 + 6;
+    let shipX, shipY;
+    if (st < IN) {
+      const e = 1 - Math.pow(1 - st / IN, 3);
+      shipX = -SHIP_W - 20 + (hoverX + SHIP_W + 20) * e;
+      shipY = alt - 50 + 50 * e;
+    } else if (st < OUT) {
+      shipX = hoverX + Math.sin(t * 2.1) * 2;
+      shipY = alt + Math.sin(t * 1.7) * 1.5;
+    } else {
+      const k = st - OUT;
+      shipX = hoverX + k * k * 420;
+      shipY = alt - k * k * 40;
+    }
+    const nose = { x: shipX + SHIP_W * 0.78, y: shipY + SHIP_H - 2 };
+
+    // Filaments de plasma : chaque grain part de la couronne et s'enroule jusqu'à l'écope.
+    if (on > 0.01) {
+      // Colonne de plasma : un faisceau qui s'évase de l'écope jusqu'à la couronne.
+      const base = surfY(nose.x) + 4;
+      for (let y = nose.y; y < base; y += PX) {
+        const k = (y - nose.y) / (base - nose.y);
+        const cxb = nose.x - k * 8 + Math.sin(t * 7 + k * 9) * 1.5 * k;
+        const w = 2 + k * 30;
+        const flick = 0.75 + 0.25 * Math.sin(t * 23 + y * 3.1);
+        ctx.globalAlpha = on * 0.3 * flick;
+        ctx.fillStyle = s.glow;
+        ctx.fillRect(snap(cxb - w / 2), snap(y), snap(w), PX);
+        ctx.globalAlpha = on * 0.7 * flick * (1 - k * 0.6);
+        ctx.fillStyle = k < 0.4 ? '#ffffff' : s.color;
+        ctx.fillRect(snap(cxb - w * 0.12), snap(y), Math.max(PX, snap(w * 0.24)), PX);
+      }
+      ctx.globalAlpha = 1;
+      const n = Math.round(flow * 1.6 * on);
+      for (let i = 0; i < n; i++) {
+        const h1 = hash2(i, 3, 17), h2 = hash2(i, 5, 17), h3 = hash2(i, 7, 17);
+        const p = (t * (0.45 + h2 * 0.5) + h1) % 1;
+        const x0 = nose.x + (h3 - 0.5) * (h2 > 0.4 ? 70 : 160);
+        const y0 = surfY(x0) + 2;
+        const swirl = (h1 - 0.5) * 50;
+        // Le plasma s'élève d'abord presque à la verticale, puis s'enroule vers l'écope.
+        const mx = x0 * 0.75 + nose.x * 0.25 + swirl * 0.4, my = nose.y + (y0 - nose.y) * 0.35;
+        for (let tr = 0; tr < 4; tr++) {
+          const q = Math.max(0, p - tr * 0.02);
+          const u = 1 - q;
+          const x = u * u * x0 + 2 * u * q * mx + q * q * nose.x + Math.sin(q * 12 + i) * (1 - q) * 3;
+          const y = u * u * y0 + 2 * u * q * my + q * q * nose.y;
+          ctx.globalAlpha = on * (tr === 0 ? 1 : 0.7 - tr * 0.15) * Math.min(1, q * 6);
+          ctx.fillStyle = q > 0.8 ? '#ffffff' : q > 0.4 ? s.color : s.glow;
+          const sz = tr === 0 ? (h2 > 0.5 ? PX * 3 : PX * 2) : PX * 2;
+          ctx.fillRect(snap(x), snap(y), sz, sz);
+        }
+      }
+      ctx.globalAlpha = 1;
+      // L'écope rougeoie en avalant le plasma.
+      halo(ctx, nose.x, nose.y, 1, 14 + 4 * Math.sin(t * 18), s.color, 0.6 * on);
+      halo(ctx, nose.x, nose.y, 0, 5, '#ffffff', 0.9 * on);
+    }
+
+    drawShip(shipX, shipY, t, { thrust: st < IN || st > OUT ? 1 : 0.4 });
+    // Coque chauffée au rouge par en dessous.
+    if (heat > 0.3) {
+      ctx.globalAlpha = (heat - 0.3) * 0.6 * (0.8 + 0.2 * Math.sin(t * 20));
+      ctx.fillStyle = '#ff6a2a';
+      ctx.fillRect(snap(shipX + 6), snap(shipY + SHIP_H - 3), SHIP_W - 14, 2);
+      ctx.globalAlpha = 1;
+    }
+    // Surchauffe : gerbes d'étincelles et éclats de coque.
+    if (alarm) {
+      for (let i = 0; i < 26; i++) {
+        const life = (t * 1.8 + hash2(i, 1, 33)) % 1;
+        const ox = shipX + 10 + hash2(i, 2, 33) * (SHIP_W - 16);
+        const oy = shipY + SHIP_H * 0.5;
+        const vx = (hash2(i, 3, 33) - 0.6) * 60, vy = -20 - hash2(i, 4, 33) * 30;
+        ctx.globalAlpha = 1 - life;
+        ctx.fillStyle = life < 0.3 ? '#ffffff' : life < 0.6 ? '#ffd27a' : '#ff6a2a';
+        ctx.fillRect(snap(ox + vx * life), snap(oy + vy * life + 60 * life * life), PX * 2, PX * 2);
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+
+    // Voile de chaleur : bords de l'écran orangés, rouges en surchauffe, en anneaux tramés.
+    if (heat > 0.05) {
+      const col = alarm ? '#ff2a2a' : heat > 0.7 ? '#ff5a2a' : '#ff9a3a';
+      const pulse = alarm ? 0.65 + 0.35 * Math.sin(t * 14) : 0.85 + 0.15 * Math.sin(t * 5);
+      ctx.fillStyle = col;
+      for (let i = 0; i < 10; i++) {
+        ctx.globalAlpha = heat * pulse * 0.055 * (10 - i) * (10 - i) / 10;
+        const m = i * 3;
+        ctx.fillRect(m, m, W - 2 * m, 3);
+        ctx.fillRect(m, H - m - 3, W - 2 * m, 3);
+        ctx.fillRect(m, m + 3, 3, H - 2 * m - 6);
+        ctx.fillRect(W - m - 3, m + 3, 3, H - 2 * m - 6);
+      }
+      ctx.globalAlpha = 1;
+    }
+    // Éclair d'entrée dans la couronne.
+    if (st > IN - 0.2 && st < IN + 0.25) {
+      ctx.globalAlpha = (1 - Math.abs(st - IN) / 0.25) * 0.35;
+      ctx.fillStyle = s.color;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+    if (fx.overheat && st > 3.0 && st < 3.2) {
+      ctx.globalAlpha = (3.2 - st) / 0.2 * 0.6;
+      ctx.fillStyle = '#ff4a3a';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+
+  }
+
+  // ---------- Titre et fin ----------
+
+  // Écran titre : une nébuleuse violette, une géante gazeuse annelée, le Mandalay passe.
+  function titleScene(view, t) {
+    const sp = spaceOf(7, {}, TITLE_SPACE);
+    drawSpace(sp, t, { camX: Math.sin(t * 0.06) * 40, camY: Math.sin(t * 0.1) * 8 });
+    const k = (t * 0.045) % 1.4;
+    drawShip(Math.round(-70 + k * 340), Math.round(96 - k * 40 + Math.sin(t * 1.4) * 1.5), t, { thrust: 1 });
   }
 
   function endScene(view, t) {
-    starfield(t, 0.5);
+    const sp = currentSystem ? systemSpace(currentSystem) : spaceOf(7, {}, TITLE_SPACE);
+    drawSpace(sp, t, { camX: t * 2, deco: false });
     const victory = view.state.phase === 'victory';
+    const gal = victory && ppSprite('dest', specOf('dest', specForDestination), 121, t, 12);
+    if (gal) blitSpr(gal, 200 - 60 - gal.off, 80 - 60 - gal.off);
     if (victory) {
-      // La nébuleuse de destination.
-      for (let i = 0; i < 400; i++) {
-        const a = hash2(i, 1, 3) * 6.28, d = hash2(i, 2, 3) * 70;
-        ctx.globalAlpha = 0.25;
-        ctx.fillStyle = i % 3 ? '#b67ae0' : '#ff7ab0';
-        ctx.fillRect(Math.round(200 + Math.cos(a) * d * 1.3 + Math.sin(t + i) * 0.5), Math.round(80 + Math.sin(a) * d * 0.7), 2, 2);
-      }
-      ctx.globalAlpha = 1;
-      drawShip(60 + Math.sin(t) * 2, 100, t, { thrust: 1 });
+      drawShip(40 + Math.sin(t) * 2, 104, t, { thrust: 1 });
     } else {
       // Épave dérivante.
       ctx.save();
-      ctx.translate(160, 90);
+      ctx.translate(160, 96);
       ctx.rotate(t * 0.15);
-      drawShip(-13, -4, t, {});
+      drawShip(-SHIP_W / 2, -SHIP_H / 2, t, {});
       ctx.restore();
     }
   }
 
+  // Cinématiques d'événement (eventscenes.js), avec les outils de dessin de ce module.
+  const eventScenes = createEventScenes({
+    ctx, W, H, drawSpace, systemSpace, drawStar, drawShip, drawAstro, halo, ring, disc,
+    surfaceBackdrop, surfaceParticles, landedYFor, drawRamp, SHIP_LAND_X, SHIP_W, ASTRO_W, ASTRO_H,
+  });
+
   return {
+    hasEventScene: (id) => eventScenes.has(id),
     render(view, t) {
+      ctx.setTransform(K, 0, 0, K, 0, 0);
       ctx.imageSmoothingEnabled = false;
       currentStar = view.state?.system?.star || 'G';
+      currentBodies = view.state?.system?.bodies || [];
+      currentSystem = view.state?.system || null;
+      currentModel = view.state?.ship?.model || 'mandalay';
+      currentNpc = (view.state?.jumps || 0) + (view.state?.system?.bodies?.length || 0);
       switch (view.scene) {
         case 'jump': jumpScene(view, t); break;
         case 'landing': landingScene(view, t); break;
         case 'surface': surfaceScene(view, t); break;
         case 'takeoff': takeoffScene(view, t); break;
+        case 'scoop': scoopScene(view, t); break;
         case 'end': endScene(view, t); break;
+        case 'title': titleScene(view, t); break;
+        case 'event': eventScenes.draw(view, t); break;
         default: systemScene(view, t);
       }
+      present();
+    },
+    // Prépare à l'avance le décor d'un système (évite un à-coup au moment du saut).
+    warm(sys) {
+      systemSpace(sys);
+    },
+    // Aperçus pour la galerie : un fond d'espace ou un panorama, par numéro de recette.
+    preview(kind, id, t, { type = 'rocky', theme = 'violet' } = {}) {
+      ctx.setTransform(K, 0, 0, K, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+      if (kind === 'space') {
+        drawSpace(spaceOf(id), t, { camX: t * 6 });
+        present();
+        return spaceOf(id).R;
+      }
+      const R = panoramaRecipe(id, type);
+      const P = cached(`pano:${R.id}:${type}:${R.airless ? theme : ''}`, () => buildPanorama(R, { space: theme }));
+      currentSystem = currentSystem || { name: 'Galerie', star: 'G', bodies: [], regions: [] };
+      currentBodies = [];
+      // Dessin direct (sans passer par panoramaIdFor, qui dépend de la graine du corps).
+      drawPanorama(P, { id: `gal-${id}`, type, seed: R.seed }, t, { x: t * 8, y: 0 });
+      present();
+      return R;
     },
     // Renvoie le corps sous un point du canvas (coordonnées internes).
     pick(view, x, y) {

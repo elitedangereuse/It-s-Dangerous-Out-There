@@ -79,6 +79,15 @@ export function generateCandidates(state) {
   if (!list.slice(0, 3).some((c) => STAR_CLASSES[c.star].scoopable)) {
     list[1].star = rng.pick(['K', 'M', 'G']);
   }
+  // Garantie d'une source pour chaque jauge tous les 3 ou 4 sauts.
+  const since = state.since || { fuel: 0, metals: 0 };
+  // Carburant : après deux systèmes sans écopage, le saut le moins cher mène à une étoile écopable.
+  if (since.fuel >= 2) {
+    const nearest = list.reduce((a, c) => (dist(pos, c) < dist(pos, a) ? c : a));
+    if (!STAR_CLASSES[nearest.star].scoopable) nearest.star = rng.pick(['K', 'M', 'G']);
+  }
+  // Coque et modules : après trois systèmes sans monde métallique, chaque candidat en garantit un.
+  if (since.metals >= 3) for (const c of list) c.metalCache = true;
   if (dist(pos, dest) <= range) {
     list.unshift({
       id: 'destination',
@@ -149,6 +158,12 @@ export function generateSystem(stub, seed) {
       seed: rng.int(0, 1e9),
     });
     ls *= rng.range(1.6, 3.2);
+  }
+  // Garantie de génération : un monde à forte teneur en métaux où se poser.
+  if (stub.metalCache && !bodies.some((b) => b.landable && (b.type === 'hmc' || b.type === 'metal'))) {
+    const def = BODY_TYPES.hmc;
+    const b = bodies.find((x) => x.landable && x.type !== 'icy') || bodies.find((x) => x.landable) || bodies[bodies.length - 1];
+    Object.assign(b, { type: 'hmc', landable: true, mats: [...def.mats], size: Math.max(def.size[0], Math.min(def.size[1], b.size)), rings: false });
   }
   // Un système spécial peut porter un événement à l'arrivée.
   let event = null;

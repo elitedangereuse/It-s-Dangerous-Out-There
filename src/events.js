@@ -1,5 +1,9 @@
 // Événements narratifs à choix. Chaque choix renvoie le texte de son issue.
-// ctx : { s, rng, hull(d), module(id|null, d), mats(obj), data(pts, label), energy(d), fuel(d), flag(name) }
+// ctx : { s, rng, hull(d), module(id|null, d), mats(obj), data(pts, label), energy(d), fuel(d), flag(name),
+//         learn(kind), swapShip(), takePassenger() }
+// Un choix peut porter when(state) : il n'apparaît que si la condition est remplie (savoir acquis).
+// title, text et label peuvent être des fonctions de l'état.
+import { SHIPS } from './data.js';
 
 const randomMats = (ctx, pool, n) => {
   const got = {};
@@ -178,11 +182,21 @@ export const EVENTS = {
         cost: { energy: 6 },
         run: (ctx) => {
           ctx.data(22, 'Codex : sonde thargoïde');
+          ctx.learn('signals');
           if (ctx.rng.chance(0.5)) {
             ctx.module('scanner', -20);
             return "La sonde réagit : une impulsion fige vos systèmes. Le scanner est endommagé (−20 %), mais les données sont inestimables.";
           }
           return 'Le chant change de tonalité, puis la sonde s\'éloigne. Données uniques enregistrées.';
+        },
+      },
+      {
+        label: 'Répondre au chant (signaux déchiffrés)',
+        when: (s) => s.knowledge.signals >= 2,
+        run: (ctx) => {
+          ctx.data(22, 'Codex : sonde thargoïde (dialogue)');
+          ctx.learn('signals');
+          return 'Vous rejouez les motifs appris. La sonde se calme, déroule un nouveau fragment de son chant, puis s\'éloigne sans vous toucher.';
         },
       },
       {
@@ -213,10 +227,20 @@ export const EVENTS = {
         },
       },
       {
+        label: 'Imiter le signal thargoïde (savoir)',
+        when: (s) => s.knowledge.signals >= 4,
+        cost: { energy: 5 },
+        run: (ctx) => {
+          ctx.data(15, 'Rencontre thargoïde (signal imité)');
+          return 'Vos haut-parleurs émettent le motif appris au fil de vos voyages. L\'Interceptor hésite, puis se replie en fleur et disparaît.';
+        },
+      },
+      {
         label: 'Tout couper et attendre',
         run: (ctx) => {
           if (ctx.rng.chance(0.5)) {
             ctx.data(15, 'Rencontre thargoïde');
+            ctx.learn('signals');
             return "Le vaisseau vous scanne longuement... puis disparaît. Vous enregistrez la rencontre, le cœur battant.";
           }
           ctx.hull(-25);
@@ -276,6 +300,7 @@ export const EVENTS = {
         run: (ctx) => {
           ctx.data(40, 'Codex : ruines gardiennes');
           ctx.flag('guardianBlueprint');
+          ctx.learn('glyphs');
           if (ctx.rng.chance(0.35)) {
             ctx.hull(-18);
             return 'La sentinelle s\'éveille et tire sur le vaisseau avant que vous ne fuyiez (coque −18). Mais vous avez le plan d\'un booster FSD gardien !';
@@ -284,9 +309,20 @@ export const EVENTS = {
         },
       },
       {
+        label: 'Lire les glyphes (savoir)',
+        when: (s) => s.knowledge.glyphs >= 3,
+        run: (ctx) => {
+          ctx.data(40, 'Codex : ruines gardiennes (glyphes lus)');
+          ctx.flag('guardianBlueprint');
+          ctx.learn('glyphs');
+          return 'Les glyphes vous sont familiers. Vous lisez le plan du booster FSD gardien sans réveiller la sentinelle.';
+        },
+      },
+      {
         label: 'Documenter discrètement',
         run: (ctx) => {
           ctx.data(18, 'Ruines gardiennes (relevés)');
+          ctx.learn('glyphs');
           return 'Relevés et photos, sans rien toucher.';
         },
       },
@@ -301,6 +337,7 @@ export const EVENTS = {
         run: (ctx) => {
           ctx.mats({ polonium: 2, germanium: 1 });
           ctx.data(25, 'Codex : site thargoïde');
+          ctx.learn('signals');
           ctx.hull(-12);
           return 'La brume caustique ronge la coque (−12) pendant que vous prélevez polonium et germanium.';
         },
@@ -309,6 +346,7 @@ export const EVENTS = {
         label: 'Photographier et partir',
         run: (ctx) => {
           ctx.data(12, 'Site thargoïde (photos)');
+          ctx.learn('signals');
           return 'Vous ne restez pas plus que nécessaire.';
         },
       },
@@ -334,6 +372,83 @@ export const EVENTS = {
     ],
   },
 
+  // --- Milieu de partie : des événements qui changent la donne ---
+  derelict: {
+    title: (s) => `${SHIPS[s.derelict].name} abandonné`,
+    text: (s) => `Un ${SHIPS[s.derelict].name} dérive moteurs coupés, sans équipage. Sa coque a souffert mais ses systèmes répondent encore. ${SHIPS[s.derelict].desc}`,
+    choices: [
+      {
+        label: (s) => `Transférer l'équipage à bord du ${SHIPS[s.derelict].name}`,
+        cost: { energy: 10 },
+        run: (ctx) => {
+          const name = SHIPS[ctx.s.derelict].name;
+          const lost = ctx.swapShip();
+          return `Vous transférez la soute et prenez les commandes du ${name}. Coque et modules sont abîmés${lost ? `, et vos ${lost} amélioration(s) restent sur l'ancien vaisseau` : ''}. Nouveau vaisseau, nouvelles règles.`;
+        },
+      },
+      {
+        label: 'Le démonter pour pièces',
+        cost: { energy: 6 },
+        run: (ctx) => {
+          const got = randomMats(ctx, ['iron', 'nickel', 'vanadium', 'germanium', 'carbon', 'iron'], 6);
+          return `Vous démontez ce qui peut l'être. Butin : ${fmt(got)}.`;
+        },
+      },
+      leave,
+    ],
+  },
+  escapePod: {
+    title: 'Capsule de survie',
+    text: "Une capsule de survie dérive, sa balise presque éteinte. À l'intérieur, une personne en cryostase. La prendre à bord, c'est partager l'oxygène jusqu'à la destination.",
+    choices: [
+      {
+        label: 'Recueillir le passager',
+        cost: { energy: 6 },
+        run: (ctx) => {
+          const p = ctx.takePassenger();
+          return `${p.name} se réveille à bord. « Je vous revaudrai ça. » ${p.perk} Le support vital s'use plus vite, et l'amener à destination rapportera gros.`;
+        },
+      },
+      {
+        label: 'Relever la balise et signaler la capsule',
+        run: (ctx) => {
+          ctx.data(8, 'Capsule de survie signalée');
+          return 'Vous transmettez sa position aux services de sauvetage. Quelqu\'un viendra, peut-être.';
+        },
+      },
+      leave,
+    ],
+  },
+  tankLeak: {
+    title: 'Fuite du réservoir !',
+    text: "Une micro-météorite a percé le réservoir pendant le saut. Le carburant s'échappe en un mince nuage cristallin.",
+    choices: [
+      {
+        label: 'Colmater sur-le-champ',
+        cost: { mats: { iron: 1, carbon: 1 } },
+        run: (ctx) => {
+          ctx.fuel(-1);
+          return 'Une rustine de fer et de carbone, posée dans l\'urgence. Vous n\'avez perdu qu\'une tonne.';
+        },
+      },
+      {
+        label: 'Isoler la section percée',
+        run: (ctx) => {
+          ctx.s.ship.fuelMax = Math.max(8, ctx.s.ship.fuelMax - 6);
+          ctx.fuel(0);
+          return `La fuite s'arrête, mais le réservoir ne contient plus que ${ctx.s.ship.fuelMax} t.`;
+        },
+      },
+      {
+        label: 'Continuer malgré la fuite',
+        run: (ctx) => {
+          ctx.flag('tankLeak');
+          return 'Vous perdrez du carburant à chaque saut tant que la brèche ne sera pas colmatée (recette de synthèse).';
+        },
+      },
+    ],
+  },
+
   // --- Panne sèche ---
   fuelRats: {
     title: 'Réservoir à sec',
@@ -352,6 +467,7 @@ export const EVENTS = {
 };
 
 export const JUMP_EVENTS = ['hyperdiction', 'fsdOverheat'];
+export const MID_EVENTS = ['derelict', 'escapePod', 'tankLeak'];
 
 export function fmt(got) {
   return Object.entries(got).map(([k, v]) => `${v} ${NAMES[k] || k}`).join(', ');

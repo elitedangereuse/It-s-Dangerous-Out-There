@@ -1,0 +1,15 @@
+{
+  "name": "It's Dangerous Out There",
+  "short_name": "Dangerous",
+  "description": "Roguelite d'exploration spatiale en pixel art dans l'univers d'Elite Dangerous.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#04051a",
+  "theme_color": "#080a2a",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
