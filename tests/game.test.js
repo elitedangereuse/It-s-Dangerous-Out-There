@@ -215,6 +215,8 @@ test('changer de vaisseau sur une épave garde la soute et perd les amélioratio
   assert.equal(g.ship.materials.iron, 9);
   assert.deepEqual(g.upgrades, {});
   assert.ok(g.shipsFlown.includes('krait'));
+  // La cinématique garde le vaisseau quitté (le Mandalay de départ).
+  assert.equal(g.leftShip, 'mandalay');
 });
 
 test('la fuite du réservoir coûte du carburant à chaque saut jusqu\'au colmatage', () => {
