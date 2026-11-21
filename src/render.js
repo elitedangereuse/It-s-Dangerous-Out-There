@@ -906,7 +906,8 @@ export function createRenderer(canvas) {
       ctx.save();
       ctx.translate(x + SMALL_W / 2, y - 3);
       ctx.rotate(0.25);
-      drawShip(-SMALL_W / 2, -SMALL_H / 2, t, { flip: true, small: true, npc: true });
+      // Même épave que l'événement « Vaisseau écrasé » : un Diamondback Explorer.
+      drawShip(-SMALL_W / 2, -SMALL_H / 2, t, { flip: true, small: true, model: 'dbx', npc: true });
       ctx.restore();
       ctx.fillStyle = '#1a1a22';
       ctx.fillRect(x - 10, y - 1, 46, 2);

@@ -29,6 +29,21 @@ export function saveProfile(profile, storage = globalThis.localStorage) {
   }
 }
 
+// Fusion de la progression gardée ailleurs (le compte du site, cf. sync.js) dans celle-ci : les
+// compteurs gardent le plus grand, le codex et les vaisseaux pilotés s'additionnent. Rien n'est perdu
+// ni compté deux fois, quel que soit l'appareil qui a joué. Modifie `profile` ; vrai s'il a changé.
+export function mergeProfile(profile, other) {
+  if (!other || typeof other !== 'object') return false;
+  const before = JSON.stringify(profile);
+  const num = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
+  for (const k of ['runs', 'victories', 'landings']) profile[k] = Math.max(num(profile[k]), num(other[k]));
+  for (const [k, v] of Object.entries(other.knowledge || {})) profile.knowledge[k] = Math.max(num(profile.knowledge[k]), num(v));
+  for (const [k, v] of Object.entries(other.codex || {})) if (v) profile.codex[k] = true;
+  for (const [k, v] of Object.entries(other.shipsFlown || {})) if (v && k in SHIPS) profile.shipsFlown[k] = true;
+  if (!profile.lastShip && typeof other.lastShip === 'string' && other.lastShip in SHIPS) profile.lastShip = other.lastShip;
+  return JSON.stringify(profile) !== before;
+}
+
 export function isUnlocked(profile, model) {
   switch (model) {
     case 'mandalay': return true;

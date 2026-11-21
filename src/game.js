@@ -68,6 +68,7 @@ export function createGame(seed = Math.floor(Math.random() * 1e9), opts = {}) {
     midEvents: [],
     passenger: null,
     derelict: null,
+    leftShip: null, // le vaisseau quitté pour l'épave (cinématique)
     shipsFlown: [ship.model],
     // Savoir et codex : repris du profil, enrichis pendant la partie.
     knowledge: { glyphs: 0, signals: 0, ...(opts.knowledge || {}) },
@@ -316,6 +317,7 @@ function swapShip(state, rng) {
   ship.fuel = Math.min(old.fuel, ship.fuelMax);
   ship.energy = Math.min(old.energy, ship.energyMax);
   const lost = Object.keys(state.upgrades).length;
+  state.leftShip = old.model;
   state.ship = ship;
   state.upgrades = {};
   delete state.flags.tankLeak;
