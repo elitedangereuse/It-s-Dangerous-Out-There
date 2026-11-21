@@ -255,7 +255,8 @@ export function createEventScenes(R) {
   }
 
   // Le vaisseau entre par la gauche et se stabilise ; renvoie sa position.
-  function shipIn(st, t, { x = 34, y = 104, thrust = true } = {}) {
+  // model : par défaut le vaisseau du joueur.
+  function shipIn(st, t, { x = 34, y = 104, thrust = true, model = null } = {}) {
     const k = easeOut(st / 1.4);
     const sx = -80 + (x + 80) * k;
     const sy = y + Math.round(Math.sin(t * 1.6) * 1.5);
@@ -267,7 +268,7 @@ export function createEventScenes(R) {
       }
       ctx.globalAlpha = 1;
     }
-    R.drawShip(sx, sy, t, { thrust: thrust ? (k < 1 ? 1 : 0.5) : 0 });
+    R.drawShip(sx, sy, t, { thrust: thrust ? (k < 1 ? 1 : 0.5) : 0, model });
     return { x: sx, y: sy };
   }
 
@@ -498,7 +499,8 @@ export function createEventScenes(R) {
       }
       const shake = st > 3 ? Math.sin(st * 60) * 1.5 : 0;
       const k2 = easeOut(st / 1.2);
-      R.drawShip(320 - k2 * 90, 70 + shake, t, { flip: true, thrust: 0.6, npc: true });
+      // C'est le vaisseau du joueur que l'éjection vient frapper.
+      R.drawShip(320 - k2 * 90, 70 + shake, t, { flip: true, thrust: 0.6 });
       flash('#fff1c0', (st - 3.2) * 2);
     },
     thargoidProbe(view, t, st) {
@@ -519,7 +521,11 @@ export function createEventScenes(R) {
     },
     derelict(view, t, st) {
       spaceBackdrop(view, t, st);
-      shipIn(st, t, { x: 20, y: 120 });
+      // Une fois l'équipage transféré, le vaisseau du joueur est l'épave : à gauche reste
+      // celui qu'il vient de quitter (sinon les deux vaisseaux seraient identiques).
+      const s = view.state;
+      const swapped = s?.leftShip && s.ship?.model === s.derelict;
+      shipIn(st, t, { x: 20, y: 120, model: swapped ? s.leftShip : null });
       // Le vaisseau abandonné, moteurs coupés, face à nous.
       const dx = 196 + Math.sin(t * 0.25) * 2, dy = 56 + Math.sin(t * 0.35) * 2;
       R.drawShip(dx, dy, t, { flip: true, model: view.state?.derelict || null, npc: true });
@@ -663,7 +669,8 @@ export function createEventScenes(R) {
       ctx.save();
       ctx.translate(x + 32, y - 6);
       ctx.rotate(0.28);
-      R.drawShip(-32, -10, t, { flip: true, npc: true });
+      // Le texte de l'événement parle d'un Diamondback Explorer.
+      R.drawShip(-32, -10, t, { flip: true, model: 'dbx', npc: true });
       ctx.restore();
       // Bourrelet du cratère par-dessus la coque enfoncée.
       ctx.fillStyle = css(b.P.dust);

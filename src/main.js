@@ -3,7 +3,8 @@
 // (avec raccourcis clavier), le panneau de droite donne l'information du moment.
 import * as G from './game.js';
 import { STAR_CLASSES, BODY_TYPES, MATERIALS, MODULES, RECIPES, REGION_TYPES, SCOOP_APPROACHES, SHIPS, PASSENGERS, CODEX, KNOWLEDGE } from './data.js';
-import { loadProfile, saveProfile, absorbRun, gameOptions, isUnlocked } from './profile.js';
+import { loadProfile, saveProfile, absorbRun, gameOptions, isUnlocked, mergeProfile } from './profile.js';
+import { createSync } from './sync.js';
 import { createRenderer, bodyAtmosphere, W, H, LANDING_DURATION, TAKEOFF_DURATION, JUMP_DURATION, SCOOP_DURATION, scoopTimeline } from './render.js';
 import { shipThumb } from './sprites.js';
 import { dist } from './galaxy.js';
@@ -20,6 +21,14 @@ let view;
 const profile = loadProfile();
 let shipChoice = isUnlocked(profile, profile.lastShip) ? profile.lastShip : 'mandalay';
 let profileSaved = '';
+// Dans miniship, la progression suit le CMDR sur tous ses appareils (cf. sync.js).
+const sync = createSync((remote) => {
+  if (!mergeProfile(profile, remote)) return;
+  profileSaved = JSON.stringify(profile);
+  saveProfile(profile);
+  if (view && view.scene === 'title') update();
+});
+sync.push(profile);
 
 function newGame(seed, { intro = true } = {}) {
   state = G.createGame(seed, gameOptions(profile, shipChoice));
@@ -1048,6 +1057,7 @@ function update() {
     if (json !== profileSaved) {
       profileSaved = json;
       saveProfile(profile);
+      sync.push(profile);
     }
   }
   if (view.scoopPick && !G.canScoop(state)) view.scoopPick = false;
@@ -1258,6 +1268,7 @@ document.addEventListener('click', (e) => {
     shipChoice = d.ship;
     profile.lastShip = d.ship;
     saveProfile(profile);
+    sync.push(profile);
     state = G.createGame(state.seed, gameOptions(profile, shipChoice));
     view.state = state;
     return update();
