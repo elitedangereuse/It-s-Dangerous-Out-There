@@ -7,7 +7,7 @@ import {
 } from '../src/game.js';
 import { RECIPES, STAR_CLASSES } from '../src/data.js';
 import { EVENTS } from '../src/events.js';
-import { loadProfile, saveProfile, absorbRun, gameOptions, unlockedShips } from '../src/profile.js';
+import { loadProfile, saveProfile, absorbRun, gameOptions, unlockedShips, mergeProfile, emptyProfile } from '../src/profile.js';
 import { Rng } from '../src/rng.js';
 
 test('une même graine produit la même partie', () => {
@@ -276,4 +276,18 @@ test('les matériaux aléatoires d\'un événement apparaissent dans le bilan', 
     assert.equal(total, 5);
     for (const e of g.event.effects.filter((x) => x.kind === 'mat')) assert.equal(g.ship.materials[e.key], (before[e.key] || 0) + e.delta);
   }
+});
+
+test('la progression du compte se fusionne sans rien perdre ni compter deux fois', () => {
+  const pc = { ...emptyProfile(), runs: 5, landings: 20, knowledge: { glyphs: 2, signals: 7 }, codex: { 'ev:flare': true }, shipsFlown: { mandalay: true, dbx: true } };
+  const phone = { ...emptyProfile(), runs: 2, landings: 4, knowledge: { glyphs: 3, signals: 0 }, codex: { 'star:N': true }, shipsFlown: { mandalay: true, krait: true, inconnu: true }, lastShip: 'krait' };
+  assert.equal(mergeProfile(phone, pc), true);
+  assert.equal(phone.runs, 5);
+  assert.equal(phone.landings, 20);
+  assert.deepEqual(phone.knowledge, { glyphs: 3, signals: 7 });
+  assert.deepEqual(phone.codex, { 'star:N': true, 'ev:flare': true });
+  assert.deepEqual(unlockedShips(phone).sort(), ['dbx', 'krait', 'mandalay']);
+  assert.equal(phone.lastShip, 'krait', 'le vaisseau choisi sur cet appareil reste');
+  assert.equal(mergeProfile(phone, pc), false, 'refusionner ne change rien');
+  assert.equal(mergeProfile(phone, null), false);
 });
